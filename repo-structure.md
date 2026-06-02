@@ -34,13 +34,8 @@ codex-analysis/
 │       └── test.yml             # Unit test runner
 │
 ├── assets/                      # Brand assets
-│   ├── lemongrass/              # Lemongrass branding
-│   │   ├── favicon.ico
-│   │   └── logo.png
-│   └── codex_logbook/                 # Codex Logbook branding
-│       ├── logo-transparent.png
-│       ├── logo-with-text-transparent.png
-│       ├── logo-with-text.png
+│   └── codex_logbook/           # Codex Logbook branding
+│       ├── logo-orange.svg
 │       ├── codex_logbook_favicon.ico
 │       └── codex_logbook_favicon_rounded.ico
 │
@@ -87,8 +82,7 @@ codex-analysis/
 │   │
 │   └── static/                  # Static assets
 │       ├── favicon.ico          # Default favicon
-│       ├── images/              # Static images
-│       │   └── logo.png
+│       ├── favicon.svg          # Orange Codex Logbook mark
 │       ├── css/                 # Stylesheets
 │       │   ├── dashboard.css    # Main dashboard styles
 │       │   ├── date-range-picker.css  # Date picker component styles

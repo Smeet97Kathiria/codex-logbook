@@ -67,7 +67,7 @@ User's Machine                    Internet
 
 #### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/smeetkathiria/codex-logbook
+git clone https://github.com/Smeet97Kathiria/codex-logbook
 cd codex-logbook
 ```
 
@@ -1218,5 +1218,5 @@ Current benchmarks (as of latest tests):
 
 ## 🆘 Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/smeetkathiria/codex-logbook/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/smeetkathiria/codex-logbook/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Smeet97Kathiria/codex-logbook/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Smeet97Kathiria/codex-logbook/discussions)
