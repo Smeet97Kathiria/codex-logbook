@@ -1,0 +1,90 @@
+/* Helio Core share modal */
+
+.modal-content.share-modal,
+.modal-content.share-link-modal {
+    width: min(560px, 100%);
+}
+
+.share-modal-title {
+    margin: 0 0 8px;
+    color: var(--helio-text);
+    font-size: 32px;
+    font-weight: 300;
+    line-height: 34px;
+    letter-spacing: 0;
+}
+
+.share-modal-description {
+    margin: 0 0 16px;
+}
+
+.share-options,
+.share-option-container {
+    display: grid;
+    gap: 8px;
+}
+
+.share-option-container {
+    padding: 12px;
+    background: var(--helio-bg);
+    border: 1px solid var(--helio-border-soft);
+    border-radius: var(--helio-radius-sm);
+}
+
+.share-option-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--helio-text);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 15px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.share-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--helio-primary);
+}
+
+.share-link-container {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+}
+
+.share-link-input {
+    flex: 1;
+}
+
+.share-link-footer {
+    display: grid;
+    gap: 8px;
+}
+
+.modal-button-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.modal-button-primary,
+.modal-button-done {
+    color: var(--helio-bg);
+    background: var(--helio-primary);
+    border-color: var(--helio-primary);
+}
+
+.modal-button-cancel {
+    background: var(--helio-bg);
+}
+
+@media (max-width: 767px) {
+    .share-link-container,
+    .modal-button-container {
+        flex-direction: column;
+    }
+}

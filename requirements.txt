@@ -1,0 +1,19 @@
+# Core dependencies
+python-dateutil>=2.8.2
+python-dotenv>=1.0.0
+click>=8.0.0
+
+# Local server dependencies
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+uvloop>=0.17.0;sys_platform!='win32'
+winloop>=0.1.8;sys_platform=='win32'
+httpx>=0.25.0
+python-multipart>=0.0.6
+aiofiles>=23.2.1
+
+# JSON parsing optimization
+orjson>=3.9.0
+
+# R2 storage dependencies
+boto3>=1.39.3

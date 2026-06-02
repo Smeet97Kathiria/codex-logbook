@@ -1,0 +1,58 @@
+/* Helio Core date range controls */
+
+.date-range-picker,
+.date-range-picker-compact,
+.date-range-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.date-range-picker,
+.date-range-picker-compact {
+    margin: 12px 0;
+    padding: 8px;
+    background: var(--helio-soft);
+    border: 1px solid var(--helio-border-soft);
+    border-radius: var(--helio-radius-sm);
+}
+
+.date-input-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.date-input-group label,
+.date-range-info {
+    color: var(--helio-muted);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 15px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.date-input-group input[type="date"] {
+    min-width: 132px;
+}
+
+.date-range-picker-stacked {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+@media (max-width: 767px) {
+    .date-range-picker,
+    .date-range-controls,
+    .date-input-group {
+        width: 100%;
+    }
+
+    .date-input-group input[type="date"],
+    .date-range-apply,
+    .date-range-preset {
+        width: 100%;
+    }
+}

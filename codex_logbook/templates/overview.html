@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex Logbook - Overview</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=helio-signal-logo">
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=helio-chart-summary-size">
+    <link rel="stylesheet" href="/static/css/date-range-picker.css?v=helio-core">
+    <style>
+        /* Right-align numeric columns in projects table */
+        #projects-table th:nth-child(n+3),
+        #projects-table td:nth-child(n+3) {
+            text-align: right;
+        }
+        
+        /* Keep project name and status left-aligned */
+        #projects-table th:nth-child(1),
+        #projects-table td:nth-child(1),
+        #projects-table th:last-child,
+        #projects-table td:last-child {
+            text-align: left;
+        }
+        
+        /* Style the project name */
+        .project-name {
+            font-weight: 500;
+        }
+        
+        /* Add monospace font for numeric columns */
+        #projects-table td:nth-child(n+3) {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.85rem;
+        }
+        
+        .recently-updated {
+            background: rgba(235, 106, 28, 0.08);
+        }
+        
+        /* Let tooltips size to their content */
+        #projects-table .tooltip-dark {
+            width: max-content;
+            max-width: 400px;
+        }
+        
+        /* Shift tooltips left for rightmost columns */
+        #projects-table th:nth-last-child(-n+3) .tooltip-dark {
+            left: auto;
+            right: 0;
+            transform: none;
+        }
+    </style>
+    <script src="/static/js/constants.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/pricing.js"></script>
+    <script src="/static/js/dynamic-interval-chart-builder.js"></script>
+    <script src="/static/js/date-range-picker.js"></script>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="header-brand-with-info">
+                <button class="header-logo header-logo-mark" onclick="window.location.href='/'" aria-label="Codex Logbook home">
+                    <span class="codex-logo-book" aria-hidden="true">
+                        <span class="codex-logo-spine"></span>
+                        <span class="codex-logo-line"></span>
+                        <span class="codex-logo-line"></span>
+                        <span class="codex-logo-cursor"></span>
+                    </span>
+                </button>
+                <div class="header-copy">
+                    <h1>
+                        <span class="brand-name" onclick="window.location.href='/'" style="cursor: pointer;">Codex Logbook</span>
+                        <span class="header-subtitle">Log Analytics</span>
+                    </h1>
+                    <div id="project-info">
+                        <p id="project-info-text">
+                            <span id="project-count">--</span> projects since <span id="first-use-header">--</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="header-controls">
+            <button onclick="window.location.href='/'" class="btn-header btn-header-visible">
+                Home
+            </button>
+            <button id="refresh-button" onclick="refreshData()" class="btn-header">
+                Refresh
+            </button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Projects Table First -->
+        <div class="table-container">
+            <div class="table-header">
+                <div>
+                    <h2>Projects</h2>
+                    <div class="table-info">
+                        <span id="project-count-info">Loading...</span>
+                    </div>
+                </div>
+                <div class="table-controls">
+                    <div class="filter-group">
+                        <label>Search:</label>
+                        <input type="text" id="projects-search" placeholder="Search projects..." 
+                            oninput="filterProjects()" class="filter-search">
+                    </div>
+                    <div class="filter-group">
+                        <label>Per page:</label>
+                        <select id="projects-per-page" onchange="updateProjectsPerPage()">
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        
+            <div class="table-wrapper">
+                <table class="data-table" id="projects-table">
+                    <thead>
+                        <tr>
+                            <th onclick="sortProjectsTable('display_name')" class="sortable">Project</th>
+                            <th onclick="sortProjectsTable('last_modified')" class="sortable sort-desc">Last Active</th>
+                            <th onclick="sortProjectsTable('duration')" class="sortable">Duration</th>
+                            <th onclick="sortProjectsTable('cost')" class="sortable">Cost
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-cost-tooltip')" 
+                                      onmouseout="hideTooltip('overview-cost-tooltip')">ⓘ</span>
+                                <div id="overview-cost-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    <div style="font-size: 0.85rem; line-height: 1.4;">
+                                        What you would've paid if you were<br>using the Codex API directly.
+                                    </div>
+                                    <div style="font-size: 0.8rem; opacity: 0.8; margin-top: 0.5rem;">
+                                        Based on current token prices from LiteLLM
+                                    </div>
+                                </div>
+                            </th>
+                            <th onclick="sortProjectsTable('commands')" class="sortable">Commands
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-commands-tooltip')" 
+                                      onmouseout="hideTooltip('overview-commands-tooltip')">ⓘ</span>
+                                <div id="overview-commands-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    User instructions
+                                </div>
+                            </th>
+                            <th onclick="sortProjectsTable('tokens_per_cmd')" class="sortable">Tokens/Cmd</th>
+                            <th onclick="sortProjectsTable('steps_per_cmd')" class="sortable">Steps/Cmd
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-steps-tooltip')" 
+                                      onmouseout="hideTooltip('overview-steps-tooltip')">ⓘ</span>
+                                <div id="overview-steps-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    Average number of steps per user command
+                                </div>
+                            </th>
+                            <th onclick="sortProjectsTable('cmds_per_context')" class="sortable">Cmds/Context
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-context-tooltip')" 
+                                      onmouseout="hideTooltip('overview-context-tooltip')">ⓘ</span>
+                                <div id="overview-context-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    Average commands before context window fills up
+                                </div>
+                            </th>
+                            <th onclick="sortProjectsTable('token_volume')" class="sortable">Token Vol.
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-token-volume-tooltip')" 
+                                      onmouseout="hideTooltip('overview-token-volume-tooltip')">ⓘ</span>
+                                <div id="overview-token-volume-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    Total input and output tokens processed for this project.
+                                </div>
+                            </th>
+                            <th>Data
+                                <span class="tooltip-info-icon"
+                                      onmouseover="showTooltip('overview-data-status-tooltip')" 
+                                      onmouseout="hideTooltip('overview-data-status-tooltip')">ⓘ</span>
+                                <div id="overview-data-status-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                    Filled means Codex Logbook parsed stats for this project.
+                                </div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="projects-tbody">
+                        <tr>
+                            <td colspan="10" class="table-loading">Loading projects...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="table-pagination" id="projects-pagination" style="display: none;">
+                <button onclick="changeProjectsPage(-1)" id="projects-prev-btn">Previous</button>
+                <div class="page-info">
+                    Page <input type="number" id="projects-page-input" value="1" onchange="goToProjectsPage()">
+                    of <span id="projects-total-pages">1</span>
+                </div>
+                <button onclick="changeProjectsPage(1)" id="projects-next-btn">Next</button>
+            </div>
+        </div>
+        
+        <!-- Charts Section -->
+        <div class="charts-section">
+            <div class="chart-container">
+                <h2>Token Usage</h2>
+                <div class="chart-subtitle" id="token-summary">
+                    <div id="token-all-time">All-time: <span class="token-input">0</span> input • <span class="token-output">0</span> output</div>
+                    <div id="token-30-days">30-day: <span class="token-input">0</span> input • <span class="token-output">0</span> output</div>
+                </div>
+                <div id="overview-token-date-picker" class="date-range-picker-compact"></div>
+                <canvas id="token-usage-chart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2>Direct API Cost</h2>
+                <div class="chart-subtitle" id="cost-summary">
+                    <span id="total-cost-all-time">All-time: $0.00</span>
+                    <span class="separator">•</span>
+                    <span id="total-cost-30-days">30-day: $0.00</span>
+                </div>
+                <div id="overview-cost-date-picker" class="date-range-picker-compact"></div>
+                <canvas id="cost-trend-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="page-quote" role="contentinfo">
+        Build gently. Keep going.
+    </div>
+    
+    <script src="/static/js/overview.js?v=token-volume-metric"></script>
+</body>
+</html>

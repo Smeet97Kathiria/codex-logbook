@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex Logbook</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=helio-signal-logo">
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=helio-chart-summary-size">
+    <link rel="stylesheet" href="/static/css/project-selector.css?v=helio-responsive-audit">
+    <link rel="stylesheet" href="/static/css/share-modal.css?v=helio-core">
+    <link rel="stylesheet" href="/static/css/date-range-picker.css?v=helio-core">
+    <script src="/static/js/constants.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/pricing.js"></script>
+    <script src="/static/js/stats.js"></script>
+    <script src="/static/js/stats-cards.js?v=token-volume-metric"></script>
+    <script src="/static/js/dynamic-interval-chart-builder.js"></script>
+    <script src="/static/js/date-range-picker.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/export.js"></script>
+    <script src="/static/js/jsonl-viewer.js"></script>
+    <script src="/static/js/message-modal.js"></script>
+    <script src="/static/js/commands-tab.js"></script>
+    <script src="/static/js/messages-tab.js"></script>
+    <script src="/static/js/memory-monitor.js"></script>
+    <script src="/static/js/project-detector.js"></script>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="header-brand-with-info">
+                <button class="header-logo header-logo-mark" onclick="window.location.href='/'" aria-label="Codex Logbook home">
+                    <span class="codex-logo-book" aria-hidden="true">
+                        <span class="codex-logo-spine"></span>
+                        <span class="codex-logo-line"></span>
+                        <span class="codex-logo-line"></span>
+                        <span class="codex-logo-cursor"></span>
+                    </span>
+                </button>
+                <div class="header-copy">
+                    <h1>
+                        <span class="brand-name" onclick="window.location.href='/'" style="cursor: pointer;">Codex Logbook</span>
+                        <span class="header-subtitle">Log Analytics</span>
+                    </h1>
+                    <div id="project-info">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="header-controls">
+            <button onclick="navigateToOverview()" class="btn-header">
+                Overview
+            </button>
+            <button onclick="window.location.href='/'" class="btn-header btn-header-visible">
+                Home
+            </button>
+            <button id="refresh-button" onclick="refreshData()" class="btn-header">
+                Refresh
+            </button>
+            <button id="export-button" onclick="exportDashboard()" class="btn-header">
+                Export
+            </button>
+            <button id="share-button" onclick="shareDashboard()" class="btn-header">
+                Share
+            </button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Overview Stats -->
+        <div class="stats-grid" id="overview-stats">
+            <div class="loading">Loading statistics...</div>
+        </div>
+        
+        <!-- Charts Section -->
+        <div class="charts-section">
+            
+            <div class="chart-container">
+                <h2>Command Complexity Over Time
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('complexity-tooltip')"
+                          onmouseout="hideTooltip('complexity-tooltip')">ⓘ
+                        <div id="complexity-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Shows the cumulative average number of tools and steps per user command over time
+                        </div>
+                    </span>
+                </h2>
+                <canvas id="command-complexity-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>Command Length Over Time
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('command-length-tooltip')" 
+                          onmouseout="hideTooltip('command-length-tooltip')">ⓘ
+                        <div id="command-length-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Shows the average number of tokens in user commands over time (1 token ≈ 4 characters)
+                        </div>
+                    </span>
+                </h2>
+                <canvas id="command-length-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>Error Type Distribution</h2>
+                <canvas id="error-distribution-chart"></canvas>
+            </div>
+            
+            
+            <div class="chart-container">
+                <h2>Tool Usage Trends
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('tool-trends-tooltip')"
+                          onmouseout="hideTooltip('tool-trends-tooltip')">ⓘ
+                        <div id="tool-trends-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Shows how frequently each tool is used per command over time (cumulative average)
+                        </div>
+                    </span>
+                </h2>
+                <canvas id="tool-trends-chart"></canvas>
+            </div>
+
+
+            <div class="chart-container">
+                <h2>Daily Cost Breakdown
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('cost-tooltip')"
+                          onmouseout="hideTooltip('cost-tooltip')">ⓘ
+                        <div id="cost-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Estimated costs based on public pricing. Includes input/output tokens and prompt caching.
+                        </div>
+                    </span>
+                </h2>
+                <!-- <div id="total-cost-text" class="text-lg text-muted mb-4">Total pay-as-you-go cost = $0.00</div> -->
+                <div id="cost-date-picker" class="date-range-picker-compact"></div>
+                <canvas id="daily-cost-chart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2>Token Usage</h2>
+                <div id="token-date-picker" class="date-range-picker-compact"></div>
+                <canvas id="tokens-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>Tool Usage</h2>
+                <canvas id="tools-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>User Command Analysis</h2>
+                <canvas id="user-interactions-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>Interruption Rate
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('interruption-rate-tooltip')"
+                          onmouseout="hideTooltip('interruption-rate-tooltip')">ⓘ
+                        <div id="interruption-rate-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Shows the percentage of user commands that were interrupted over time
+                        </div>
+                    </span>
+                </h2>
+                <canvas id="interruption-rate-trend-chart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2>Error Rate Over Time
+                    <span class="tooltip-info-icon"
+                          onmouseover="showTooltip('error-rate-tooltip')"
+                          onmouseout="hideTooltip('error-rate-tooltip')">ⓘ
+                        <div id="error-rate-tooltip" class="tooltip-dark position-below tooltip-sm">
+                            Shows the percentage of assistant messages that resulted in errors over time
+                        </div>
+                    </span>
+                </h2>
+                <canvas id="error-rate-trend-chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h2>Model Usage Distribution
+                    <span id="synthetic-tooltip-icon" style="display: none;">
+                        <span class="tooltip-info-icon"
+                              onmouseover="showTooltip('synthetic-tooltip')"
+                              onmouseout="hideTooltip('synthetic-tooltip')">ⓘ
+                            <div id="synthetic-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                &lt;synthetic&gt; indicates placeholder responses logged by Codex when you interrupt it while it's using tools
+                            </div>
+                        </span>
+                    </span>
+                </h2>
+                <canvas id="model-usage-chart"></canvas>
+            </div>
+
+    
+            
+            <div class="chart-container">
+                <h2>Token Usage by Hour</h2>
+                <canvas id="hourly-tokens-chart"></canvas>
+            </div>
+        </div>
+
+        
+        <!-- Tabs Container -->
+        <div class="tabs-container">
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-button active" onclick="switchTab('commands')">User Commands</button>
+                <button class="tab-button" onclick="switchTab('messages')">Messages</button>
+                <button class="tab-button" onclick="switchTab('jsonl')">JSONL Viewer</button>
+            </div>
+            
+            <!-- Tab Content -->
+            <div class="tab-content active" id="commands-tab">
+                <!-- User Commands Table -->
+                <div class="user-commands-section table-section-wide">
+                    <div class="table-header">
+                        <div>
+                            <div id="commands-summary" class="table-summary">
+                                <span>Loading...</span>
+                            </div>
+                        </div>
+                        <div class="table-controls">
+                            <div class="filter-group">
+                                <input type="text" id="commands-search" placeholder="Search commands..." 
+                                    oninput="filterCommands()" class="filter-input-search">
+                            </div>
+                            <div class="filter-group">
+                                <select id="commands-interrupted-filter" onchange="filterCommands()">
+                                    <option value="">All Messages</option>
+                                    <option value="yes">Interrupted Only</option>
+                                    <option value="no">No Interruptions</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <select id="commands-per-page" onchange="updateCommandsPerPage()">
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </div>
+                            <button onclick="exportCommandsToCSV()" class="btn-export" title="Export to CSV">
+                                Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            
+                <div class="table-wrapper">
+                    <table class="data-table" id="commands-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 30%;" onclick="sortCommandsTable('user_message')" class="sortable">
+                                    User Command
+                                </th>
+                                <th style="width: 14%;" onclick="sortCommandsTable('timestamp')" class="sortable">
+                                    Timestamp
+                                </th>
+                                <th style="width: 10%;" onclick="sortCommandsTable('model')" class="sortable">
+                                    Model
+                                </th>
+                                <th style="width: 7%; text-align: center;" onclick="sortCommandsTable('assistant_steps')" class="sortable">
+                                    Steps
+                                </th>
+                                <th style="width: 7%; text-align: center;" onclick="sortCommandsTable('tools_used')" class="sortable">
+                                    Tools
+                                </th>
+                                <th style="width: 8%; text-align: center;" onclick="sortCommandsTable('estimated_tokens')" class="sortable">
+                                    Tokens
+                                    <span class="tooltip-info-icon"
+                                        onmouseover="showTooltip('tokens-tooltip')"
+                                        onmouseout="hideTooltip('tokens-tooltip')">ⓘ
+                                        <div id="tokens-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                            Approximate token count
+                                        </div>
+                                    </span>
+                                </th>
+                                <th style="width: 10%; text-align: center; position: relative;" class="sortable">
+                                    <div onclick="sortCommandsTable('followed_by_interruption')" style="cursor: pointer; display: inline-block;">
+                                        Interrupted
+                                    </div>
+                                    <span class="tooltip-info-icon" style="margin-left: 0.25rem; position: relative; z-index: 1;"
+                                        onmouseover="showTooltip('interrupted-column-tooltip')" 
+                                        onmouseout="hideTooltip('interrupted-column-tooltip')">ⓘ</span>
+                                    <div id="interrupted-column-tooltip" class="tooltip-dark position-below tooltip-sm">
+                                        <div style="font-size: 0.75rem;">
+                                            Commands followed by:<br>
+                                            "[Request interrupted by user for tool use]"<br>
+                                            or "API Error: Request was aborted."
+                                        </div>
+                                    </div>
+                                </th>
+                                <th style="width: 14%;" class="no-sort">Tool Names</th>
+                            </tr>
+                        </thead>
+                        <tbody id="commands-tbody">
+                            <tr>
+                                <td colspan="8" class="table-loading">
+                                    Loading command details...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            
+                <div class="table-pagination" id="commands-pagination" style="display: none;">
+                    <button onclick="changeCommandsPage(-1)" id="commands-prev-btn">Previous</button>
+                    <div class="page-info">
+                        Page <input type="number" id="commands-page-input" value="1" onchange="goToCommandsPage()">
+                        of <span id="commands-total-pages">1</span>
+                    </div>
+                    <button onclick="changeCommandsPage(1)" id="commands-next-btn">Next</button>
+                    <div class="row-jump">
+                        <label>Go to row:</label>
+                        <input type="number" id="commands-row-input" 
+                            placeholder="Row #" onkeypress="if(event.key==='Enter') goToCommandRow()">
+                        <button onclick="goToCommandRow()">Go</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+            
+        <!-- Messages Tab -->
+        <div class="tab-content" id="messages-tab">
+            <div class="table-section-wide">
+                <div class="table-header">
+                    <div>
+                        <div id="message-count" class="table-summary"></div>
+                    </div>
+                <div class="table-controls">
+                    <div class="filter-group">
+                        <select id="type-filter">
+                            <option value="">All Types</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="error-filter">
+                            <option value="">All Messages</option>
+                            <option value="errors-only">Errors Only</option>
+                            <option value="no-errors">No Errors</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="tool-filter">
+                            <option value="">All Tools</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="search-input" placeholder="Search messages..." class="filter-input-search">
+                    </div>
+                    <div class="filter-group">
+                        <select id="per-page">
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                    </div>
+                    <button onclick="exportMessagesToCSV()" class="btn-export" title="Export to CSV">
+                        Export
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="table-wrapper">
+            <table class="data-table" id="messages-table">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('type')" class="sortable">
+                            Type
+                        </th>
+                        <th onclick="sortTable('content')" class="sortable">
+                            Message
+                        </th>
+                        <th onclick="sortTable('timestamp')" class="sortable">
+                            Timestamp
+                        </th>
+                        <th onclick="sortTable('model')" class="sortable">
+                            Model
+                        </th>
+                        <th onclick="sortTable('tokens')" class="sortable">
+                            Tokens
+                        </th>
+                        <th class="no-sort">Tools</th>
+                    </tr>
+                </thead>
+                <tbody id="messages-tbody">
+                    <tr><td colspan="6" class="loading">Loading messages...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="table-pagination" id="messages-pagination" style="display: none;">
+            <button onclick="changeMessagesPage(-1)" id="messages-prev-btn">Previous</button>
+            <div class="page-info">
+                Page <input type="number" id="messages-page-input" value="1" onchange="goToMessagesPage()">
+                of <span id="messages-total-pages">1</span>
+            </div>
+            <button onclick="changeMessagesPage(1)" id="messages-next-btn">Next</button>
+            <div class="row-jump">
+                <label>Go to row:</label>
+                <input type="number" id="messages-row-input" 
+                    placeholder="Row #" onkeypress="if(event.key==='Enter') goToMessageRow()">
+                <button onclick="goToMessageRow()">Go</button>
+            </div>
+        </div>
+    </div>
+            
+    <!-- JSONL Viewer Tab -->
+    <div class="tab-content" id="jsonl-tab">
+        <div class="table-section-wide">
+            <div class="jsonl-controls">
+                <select id="jsonlFileSelect" onchange="JsonlViewer.loadFile(this.value)">
+                    <option value="">-- Select a file --</option>
+                </select>
+                <span id="jsonlStats" style="margin-left: 2rem; color: #7A6549;"></span>
+            </div>
+            <div id="jsonlMetadata" style="display: none;">
+                <div class="metadata-grid">
+                    <div>
+                        <strong class="metadata-label">Created:</strong><br>
+                        <span id="jsonlCreated" class="metadata-value"></span>
+                    </div>
+                    <div>
+                        <strong class="metadata-label">Last Updated:</strong><br>
+                        <span id="jsonlUpdated" class="metadata-value"></span>
+                    </div>
+                    <div>
+                        <strong class="metadata-label">Duration:</strong><br>
+                        <span id="jsonlDuration" class="metadata-value"></span>
+                    </div>
+                    <div>
+                        <strong class="metadata-label">File Size:</strong><br>
+                        <span id="jsonlFileSize" class="metadata-value"></span>
+                    </div>
+                </div>
+            </div>
+            <div id="jsonlTableContainer" style="display: none;">
+                <div class="table-controls mb-4">
+                    <div class="filter-group">
+                        <select id="jsonlTypeFilter" onchange="JsonlViewer.filter()" class="filter-input">
+                            <option value="">All Types</option>
+                            <option value="user">User</option>
+                            <option value="assistant">Assistant</option>
+                            <option value="summary">Summary</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="jsonlSearchInput" placeholder="Search log..." 
+                                onkeyup="JsonlViewer.filter()" 
+                                class="filter-input-search">
+                    </div>
+                    <div class="filter-group">
+                        <select id="jsonl-per-page" onchange="JsonlViewer.updatePerPage()">
+                            <option value="20">20</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                    </div>
+                    <div style="margin-left: auto;">
+                        <span class="table-summary">Showing <span id="jsonlFilteredCount">0</span> of <span id="jsonlTotalCount">0</span> lines</span>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="jsonl-table">
+                        <thead>
+                            <tr>
+                                <th>Line</th>
+                                <th>Type</th>
+                                <th>Timestamp</th>
+                                <th>Content Preview</th>
+                                <th>UUID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jsonlTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-pagination" id="jsonl-pagination" style="display: none;">
+                    <button onclick="JsonlViewer.changePageBy(-1)" id="jsonl-prev-btn">Previous</button>
+                    <div class="page-info">
+                        Page <input type="number" id="jsonl-page-input" value="1" onchange="JsonlViewer.goToPage()">
+                        of <span id="jsonl-total-pages">1</span>
+                    </div>
+                    <button onclick="JsonlViewer.changePageBy(1)" id="jsonl-next-btn">Next</button>
+                    <div class="row-jump">
+                        <label>Go to row:</label>
+                        <input type="number" id="jsonl-row-input" 
+                            placeholder="Row #" onkeypress="if(event.key==='Enter') JsonlViewer.goToRow()">
+                        <button onclick="JsonlViewer.goToRow()">Go</button>
+                    </div>
+                </div>
+            </div>
+            <div id="jsonlLoading" class="loading" style="display: none;">Loading JSONL file...</div>
+            <div id="jsonlError" class="error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Message Detail Modal -->
+    <div id="message-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <div class="modal-header">
+                <h2 id="modal-title" style="margin-bottom: 0;">Message Details</h2>
+                <div class="modal-navigation">
+                    <button id="modal-prev-btn" class="modal-nav-btn" onclick="navigateMessage(-1)">← Previous</button>
+                    <span id="modal-position" class="modal-position">1 of 100</span>
+                    <button id="modal-next-btn" class="modal-nav-btn" onclick="navigateMessage(1)">Next →</button>
+                </div>
+            </div>
+            <div id="modal-body">
+                <!-- Details will be inserted here -->
+            </div>
+        </div>
+    </div>
+        
+    <div class="page-quote" role="contentinfo">
+        Build gently. Keep going.
+    </div>
+
+    <script>
+        // Global variables
+        let allMessages = [];
+        let filteredMessages = [];
+        let statistics = {};
+        // Messages tab state variables moved to messages-tab.js
+        
+        
+        // Build chronological data from all available sources
+        
+        // Local mode API endpoints
+        const apiBase = '/api';
+        
+        // Tab switching functionality
+        // Load messages when Messages tab is activated
+        async function loadMessagesForTab() {
+            // Check if we already have enough messages loaded
+            if (window.allMessages && window.allMessages.length >= Math.min(1000, window.totalMessageCount)) {
+                // Don't load more if we already have the initial batch
+                // But don't mark as fully loaded unless we have all messages
+                if (window.allMessages.length >= window.totalMessageCount) {
+                    window.messagesFullyLoaded = true;
+                }
+                return;
+            }
+            
+            console.log('Loading messages for Messages tab...');
+            
+            // Show loading indicator
+            const messageCountEl = document.getElementById('message-count');
+            const originalText = messageCountEl ? messageCountEl.textContent : '';
+            if (messageCountEl) {
+                messageCountEl.textContent = 'Loading messages...';
+            }
+            
+            try {
+                const loadStart = performance.now();
+                
+                // Load more messages (configurable initial load)
+                const limit = Math.min(window.messagesInitialLoad || 1000, window.totalMessageCount);
+                const response = await fetch(`${apiBase}/messages?limit=${limit}`);
+                
+                if (response.ok) {
+                    const messages = await response.json();
+                    
+                    // Handle both array response and paginated response
+                    const messageArray = Array.isArray(messages) ? messages : messages.messages;
+                    
+                    allMessages = messageArray;
+                    window.allMessages = messageArray;
+                    window.messagesFullyLoaded = messageArray.length >= window.totalMessageCount;
+                    
+                    // Re-initialize filters with more data
+                    initializeFilters();
+                    applyFilters();
+                    
+                    const loadTime = performance.now() - loadStart;
+                    console.log(`✅ Messages loaded: ${loadTime.toFixed(2)}ms (${messageArray.length} messages, ${JSON.stringify(messageArray).length / 1024} KB)`);
+                    
+                    // Memory snapshot after messages load
+                    if (window.memoryMonitorEnabled) {
+                        MemoryMonitor.snapshot('afterMessages');
+                        console.log('📊 Memory after messages load:');
+                        MemoryMonitor.printReport();
+                    }
+                    
+                    // Don't update message count here - let displayMessages() handle it
+                    // displayMessages() will be called by applyFilters() and has the correct logic
+                }
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+                if (messageCountEl) {
+                    messageCountEl.textContent = originalText;
+                }
+            }
+        }
+        
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // Load JSONL files when switching to JSONL tab
+            if (tabName === 'jsonl' && document.getElementById('jsonlFileSelect').options.length <= 1) {
+                JsonlViewer.loadFileList();
+            }
+            
+            // Load messages when switching to Messages tab
+            if (tabName === 'messages' && !window.messagesFullyLoaded) {
+                loadMessagesForTab();
+            }
+        }
+        
+        // JSONL Viewer functionality moved to jsonl-viewer.js
+        
+        // Initialize dashboard with timing logs
+        async function initDashboard() {
+            // Check if this is after a project switch
+            const projectSwitchTime = sessionStorage.getItem('projectSwitchTime');
+            const projectSwitchStartTime = sessionStorage.getItem('projectSwitchStartTime');
+            if (projectSwitchTime && projectSwitchStartTime) {
+                const totalSwitchTime = Date.now() - parseInt(projectSwitchStartTime);
+                console.log(`📊 Project switch total time: ${totalSwitchTime}ms (API: ${parseFloat(projectSwitchTime).toFixed(2)}ms + Page reload: ${(totalSwitchTime - parseFloat(projectSwitchTime)).toFixed(2)}ms)`);
+                sessionStorage.removeItem('projectSwitchTime');
+                sessionStorage.removeItem('projectSwitchStartTime');
+            }
+            
+            // Check if this is after a data refresh
+            const dataRefreshTime = sessionStorage.getItem('dataRefreshTime');
+            const dataRefreshStartTime = sessionStorage.getItem('dataRefreshStartTime');
+            if (dataRefreshTime && dataRefreshStartTime) {
+                const totalRefreshTime = Date.now() - parseInt(dataRefreshStartTime);
+                console.log(`📊 Data refresh total time: ${totalRefreshTime}ms (Backend processing: ${parseFloat(dataRefreshTime).toFixed(2)}ms + Page reload: ${(totalRefreshTime - parseFloat(dataRefreshTime)).toFixed(2)}ms)`);
+                sessionStorage.removeItem('dataRefreshTime');
+                sessionStorage.removeItem('dataRefreshStartTime');
+            }
+            
+            // Start overall timing
+            const perfStart = performance.now();
+            const timings = {
+                projectCheck: 0,
+                statsLoad: 0,
+                messagesLoad: 0,
+                uiInit: 0,
+                displayProjectInfo: 0,
+                displayStats: 0,
+                chartsInit: 0,
+                commandsInit: 0,
+                filtersInit: 0,
+                total: 0
+            };
+            
+            console.log('🚀 Dashboard initialization started');
+            
+            // Memory monitoring will be enabled/disabled based on server config
+            
+            try {
+                // First check if project is in URL
+                const projectFromURL = detectProjectFromURL();
+                if (projectFromURL) {
+                    console.log('🔍 Setting project from URL...');
+                    const projectSet = await setProjectFromURL();
+                    if (!projectSet) {
+                        showEmptyState();
+                        return;
+                    }
+                }
+                
+                // Then check if a project is selected
+                const projectCheckStart = performance.now();
+                const projectResponse = await fetch('/api/project');
+                const projectData = await projectResponse.json();
+                timings.projectCheck = performance.now() - projectCheckStart;
+                console.log(`✓ Project check: ${timings.projectCheck.toFixed(2)}ms`);
+                
+                if (projectData.status === 'no_project') {
+                    // Show empty state with project selector
+                    showEmptyState();
+                    return;
+                }
+                
+                // Project selector will be populated by loadRecentProjects() later
+                
+                // Use optimized dashboard data endpoint with timezone offset
+                const timezoneOffset = new Date().getTimezoneOffset(); // Returns offset in minutes
+                const dashboardDataUrl = `${apiBase}/dashboard-data?timezone_offset=${-timezoneOffset}`;
+                
+                // Load all dashboard data in one optimized call
+                const dataStart = performance.now();
+                const dataResponse = await fetch(dashboardDataUrl);
+                if (!dataResponse.ok) {
+                    throw new Error('Failed to load dashboard data');
+                }
+                const dashboardData = await dataResponse.json();
+                
+                // Extract data from response
+                statistics = dashboardData.statistics;
+                window.statistics = statistics;  // Make available globally for sharing
+                
+                // Use chart messages for charts (smaller payload)
+                // Chart messages no longer needed - all charts use backend statistics
+                
+                // Store first page of full messages
+                const messagesPage = dashboardData.messages_page;
+                allMessages = messagesPage.messages;  // Start with first page only
+                window.allMessages = allMessages;  // Make available globally
+                
+                // Store total message count for UI
+                window.totalMessageCount = dashboardData.message_count;
+                
+                // Store configuration
+                window.messagesInitialLoad = dashboardData.config?.messages_initial_load || 1000;
+                window.memoryMonitorEnabled = dashboardData.config?.enable_memory_monitor || false;
+                window.maxDateRangeDays = dashboardData.config?.max_date_range_days || 30;
+                
+                // Flag to indicate partial data
+                window.isLoadingFullMessages = true;
+                
+                const dataLoadTime = performance.now() - dataStart;
+                timings.dashboardDataLoad = dataLoadTime;
+                // Keep legacy timing names for compatibility but make them 0
+                timings.statsLoad = 0;
+                timings.messagesLoad = 0;
+                
+                // Memory snapshot after data load
+                if (window.memoryMonitorEnabled) {
+                    MemoryMonitor.snapshot('afterStats');
+                }
+                
+                console.log(`✓ Dashboard data loaded: ${dataLoadTime.toFixed(2)}ms`);
+                console.log(`  - Stats: ${JSON.stringify(statistics).length / 1024} KB`);
+                console.log(`  - Chart data: Now using backend statistics (no messages needed)`);
+                console.log(`  - Messages page: ${allMessages.length} of ${window.totalMessageCount} total messages`);
+                
+                // Initialize UI
+                const uiStart = performance.now();
+                
+                const projectInfoStart = performance.now();
+                displayProjectInfo();
+                timings.displayProjectInfo = performance.now() - projectInfoStart;
+                console.log(`  - Project info displayed: ${timings.displayProjectInfo.toFixed(2)}ms`);
+                
+                const statsStart2 = performance.now();
+                // Use the shared stats cards module
+                window.StatsCardsModule.displayOverviewStats(statistics);
+                timings.displayStats = performance.now() - statsStart2;
+                console.log(`  - Overview stats displayed: ${timings.displayStats.toFixed(2)}ms`);
+                
+                const chartsStart = performance.now();
+                await initializeCharts(statistics);
+                timings.chartsInit = performance.now() - chartsStart;
+                console.log(`  - Charts initialized: ${timings.chartsInit.toFixed(2)}ms`);
+                
+                const commandsStart = performance.now();
+                initializeCommandsTable();
+                timings.commandsInit = performance.now() - commandsStart;
+                console.log(`  - Commands table initialized: ${timings.commandsInit.toFixed(2)}ms`);
+                
+                const filtersStart = performance.now();
+                initializeFilters();
+                applyFilters();
+                timings.filtersInit = performance.now() - filtersStart;
+                console.log(`  - Filters initialized: ${timings.filtersInit.toFixed(2)}ms`);
+                
+                timings.uiInit = performance.now() - uiStart;
+                console.log(`✓ UI initialized: ${timings.uiInit.toFixed(2)}ms`);
+                
+                // Clear loading flag since we're not doing background load anymore
+                window.isLoadingFullMessages = false;
+                
+                // Show refresh, export, and share buttons
+                const refreshButton = document.getElementById('refresh-button');
+                const exportButton = document.getElementById('export-button');
+                const shareButton = document.getElementById('share-button');
+                if (refreshButton) {
+                    // Show and update click handler
+                    refreshButton.style.display = 'block';
+                    refreshButton.onclick = refreshLocalData;
+                    
+                    // Show export button
+                    if (exportButton) exportButton.style.display = 'block';
+                    
+                    // Show share button
+                    if (shareButton) shareButton.style.display = 'block';
+                    
+                    // Load recent projects after displayProjectInfo creates the selector
+                    setTimeout(() => {
+                        loadRecentProjects();
+                    }, 100);
+                }
+                
+                // Add global click listener to close error tooltip
+                document.addEventListener('click', (e) => {
+                    const tooltip = document.getElementById('error-type-tooltip');
+                    const infoIcon = tooltip?.parentElement;
+                    if (tooltip && !infoIcon?.contains(e.target)) {
+                        tooltip.style.display = 'none';
+                    }
+                });
+                
+                // Calculate total time
+                timings.total = performance.now() - perfStart;
+                
+                // Log summary
+                console.log('📊 Dashboard Load Performance Summary:');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log(`Total Time: ${timings.total.toFixed(2)}ms`);
+                const apiTime = timings.projectCheck + (timings.dashboardDataLoad || timings.statsLoad + timings.messagesLoad);
+                console.log(`  - Backend API calls: ${apiTime.toFixed(2)}ms (${(apiTime / timings.total * 100).toFixed(1)}%)`);
+                console.log(`    - Project check: ${timings.projectCheck.toFixed(2)}ms`);
+                if (timings.dashboardDataLoad) {
+                    console.log(`    - Dashboard data: ${timings.dashboardDataLoad.toFixed(2)}ms (combined stats + charts + messages)`);
+                } else {
+                    console.log(`    - Stats load: ${timings.statsLoad.toFixed(2)}ms`);
+                    console.log(`    - Messages load: ${timings.messagesLoad.toFixed(2)}ms`);
+                }
+                console.log(`  - Frontend rendering: ${timings.uiInit.toFixed(2)}ms (${(timings.uiInit / timings.total * 100).toFixed(1)}%)`);
+                console.log(`    - Charts: ${timings.chartsInit.toFixed(2)}ms (${(timings.chartsInit / timings.total * 100).toFixed(1)}%)`);
+                console.log(`    - Commands table: ${timings.commandsInit.toFixed(2)}ms`);
+                console.log(`    - Stats display: ${timings.displayStats.toFixed(2)}ms`);
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                
+                // Memory snapshot after UI init
+                if (window.memoryMonitorEnabled) {
+                    MemoryMonitor.snapshot('afterCharts');
+                    
+                    // Print memory report
+                    setTimeout(() => {
+                        MemoryMonitor.printReport();
+                    }, 100);
+                }
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                console.log(`Dashboard load failed after ${(performance.now() - perfStart).toFixed(2)}ms`);
+                // Show project selector in error state
+                showEmptyState();
+            }
+        }
+        
+        // Display project info
+        function displayProjectInfo() {
+            const projectName = statistics.overview.project_name || 'Unknown Project';
+            const projectPath = statistics.overview.project_path || '';
+            
+            // Get the refresh button
+            const refreshButton = document.getElementById('refresh-button');
+                
+                document.getElementById('project-info').innerHTML = 
+                    `<div class="project-selector-container">
+                        <div class="project-selector-main" style="position: relative;">
+                            ${renderProjectSelectorMarkup('Loading projects...')}
+                            <div id="refresh-button-container" style="position: absolute; right: 0;"></div>
+                        </div>
+                        <div class="project-selector-status">
+                            <span class="project-selector-status-text"></span>
+                        </div>
+                    </div>`;
+                
+                // Populate the tooltip content
+                const logTooltip = document.getElementById('log-tooltip');
+                if (logTooltip) {
+                    logTooltip.innerHTML = CODEX_LOGS_TOOLTIP;
+                }
+                
+                // Move refresh and export buttons into the container
+                const buttonsContainer = refreshButton?.parentElement;
+                if (buttonsContainer && buttonsContainer.style.position === 'absolute') {
+                    const container = document.getElementById('refresh-button-container');
+                    if (container) {
+                        // Move the entire buttons container
+                        buttonsContainer.style.position = 'static';
+                        buttonsContainer.style.transform = 'none';
+                        buttonsContainer.style.top = 'auto';
+                        buttonsContainer.style.right = 'auto';
+                        buttonsContainer.style.flexDirection = 'row';
+                        buttonsContainer.style.gap = '0.5rem';
+                        container.appendChild(buttonsContainer);
+                    }
+                }
+        }
+        
+        // Refresh data for local mode
+        async function refreshLocalData() {
+            const button = document.getElementById('refresh-button');
+            const originalText = button.innerHTML;
+            
+            // Start timing - store the start time BEFORE processing
+            const refreshStart = performance.now();
+            const absoluteStartTime = Date.now();
+            sessionStorage.setItem('dataRefreshStartTime', absoluteStartTime.toString());
+            console.log('Starting data refresh...');
+            
+            try {
+                button.innerHTML = 'Refreshing...';
+                button.disabled = true;
+                
+                // Call the local refresh endpoint with timezone offset
+                const timezoneOffset = new Date().getTimezoneOffset();
+                const response = await fetch('/api/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone_offset: -timezoneOffset })
+                });
+                
+                const refreshTime = performance.now() - refreshStart;
+                
+                if (!response.ok) {
+                    throw new Error('Refresh failed');
+                }
+                
+                const result = await response.json();
+                console.log(`✓ Data refreshed in ${refreshTime.toFixed(2)}ms`);
+                
+                if (result.files_changed) {
+                    console.log(`  - Files changed: Yes`);
+                    console.log(`  - Messages found: ${result.message_count || 'N/A'}`);
+                    button.innerHTML = '✅ Updated!';
+                } else {
+                    console.log(`  - Files changed: No (using cached data)`);
+                    button.innerHTML = '✅ No changes!';
+                }
+                
+                // Store backend processing time
+                sessionStorage.setItem('dataRefreshTime', refreshTime.toString());
+                
+                // Reload the dashboard data
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+                
+            } catch (error) {
+                const refreshTime = performance.now() - refreshStart;
+                console.error(`Refresh failed after ${refreshTime.toFixed(2)}ms:`, error);
+                button.innerHTML = 'Refresh failed';
+                alert(`Error refreshing data: ${error.message}`);
+                
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 2000);
+            }
+        }
+        
+        // Refresh function that detects mode and uses appropriate method
+        async function refreshData() {
+            // Check if we're in local mode (port 8081)
+            if (window.location.port === '8081') {
+                // Use the local mode refresh function
+                refreshLocalData();
+            } else {
+                // Web mode - refresh not applicable
+                const button = document.getElementById('refresh-button');
+                if (button) {
+                    button.disabled = true;
+                    button.innerHTML = 'Upload new files to refresh';
+                    
+                    setTimeout(() => {
+                        button.innerHTML = 'Refresh';
+                        button.disabled = false;
+                        
+                        alert(
+                            'In web mode, data refresh works differently:\n\n' +
+                            '• Upload new JSONL files using the upload page\n' +
+                            '• Your analysis will automatically update\n' +
+                            '• Session data expires after 1 hour'
+                        );
+                    }, 100);
+                }
+            }
+        }
+        
+        // Display overview statistics moved to stats-cards.js
+        
+        // Messages tab functionality moved to messages-tab.js
+        
+        // User Commands Table functionality moved to commands-tab.js
+        
+        let recentProjectOptions = [];
+        let currentProjectDirName = '';
+
+        function renderProjectSelectorMarkup(placeholder) {
+            return `
+                <div class="project-selector-wrapper" data-project-selector>
+                    <select id="project-selector" class="project-selector-dropdown" onchange="switchProject()" aria-hidden="true">
+                        <option value="">${escapeProjectSelectorHtml(placeholder)}</option>
+                    </select>
+                    <button type="button"
+                            id="project-selector-trigger"
+                            class="project-selector-trigger"
+                            onclick="toggleProjectSelector(event)"
+                            aria-haspopup="listbox"
+                            aria-expanded="false">
+                        <span id="project-selector-label" class="project-selector-trigger-label">${escapeProjectSelectorHtml(placeholder)}</span>
+                        <span class="project-selector-caret" aria-hidden="true"></span>
+                    </button>
+                    <div id="project-selector-menu" class="project-selector-menu" role="listbox" hidden>
+                        <div class="project-selector-search-wrap">
+                            <input id="project-selector-search"
+                                   class="project-selector-search"
+                                   type="search"
+                                   placeholder="Search projects..."
+                                   autocomplete="off"
+                                   oninput="renderCustomProjectOptions(this.value)">
+                        </div>
+                        <div id="project-selector-options" class="project-selector-options"></div>
+                    </div>
+                </div>`;
+        }
+
+        function escapeProjectSelectorHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getProjectSelectorLabel(project) {
+            const rawName = project.display_name || project.dir_name || '';
+            const pieces = rawName.split('/').filter(Boolean);
+            return pieces.length ? pieces[pieces.length - 1] : rawName.replace(/^-/, '');
+        }
+
+        function getProjectSelectorMeta(project) {
+            return project.display_name || project.dir_name || '';
+        }
+
+        function syncProjectSelector(projects, currentDirName = '') {
+            const selector = document.getElementById('project-selector');
+            if (!selector) { return; }
+
+            recentProjectOptions = projects || [];
+            currentProjectDirName = currentDirName || '';
+            selector.innerHTML = '';
+
+            recentProjectOptions.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.dir_name;
+                option.textContent = getProjectSelectorLabel(project);
+                option.title = getProjectSelectorMeta(project);
+                option.selected = project.dir_name === currentProjectDirName;
+                selector.appendChild(option);
+            });
+
+            if (currentProjectDirName) {
+                selector.value = currentProjectDirName;
+            }
+
+            updateProjectSelectorLabel();
+            renderCustomProjectOptions();
+        }
+
+        function updateProjectSelectorLabel() {
+            const label = document.getElementById('project-selector-label');
+            const selector = document.getElementById('project-selector');
+            if (!label || !selector) { return; }
+
+            const selectedProject = recentProjectOptions.find(project => project.dir_name === selector.value);
+            label.textContent = selectedProject ? getProjectSelectorLabel(selectedProject) : 'Select a project...';
+            label.title = selectedProject ? getProjectSelectorMeta(selectedProject) : '';
+        }
+
+        function toggleProjectSelector(event) {
+            event?.stopPropagation();
+            const menu = document.getElementById('project-selector-menu');
+            const trigger = document.getElementById('project-selector-trigger');
+            if (!menu || !trigger) { return; }
+
+            const willOpen = menu.hidden;
+            menu.hidden = !willOpen;
+            trigger.setAttribute('aria-expanded', String(willOpen));
+
+            if (willOpen) {
+                const search = document.getElementById('project-selector-search');
+                renderCustomProjectOptions(search?.value || '');
+                setTimeout(() => search?.focus(), 0);
+            }
+        }
+
+        function closeProjectSelector() {
+            const menu = document.getElementById('project-selector-menu');
+            const trigger = document.getElementById('project-selector-trigger');
+            if (menu) { menu.hidden = true; }
+            if (trigger) { trigger.setAttribute('aria-expanded', 'false'); }
+        }
+
+        function renderCustomProjectOptions(searchTerm = '') {
+            const optionsContainer = document.getElementById('project-selector-options');
+            if (!optionsContainer) { return; }
+
+            const normalizedSearch = searchTerm.trim().toLowerCase();
+            const filteredProjects = recentProjectOptions.filter(project => {
+                const haystack = `${project.dir_name || ''} ${project.display_name || ''}`.toLowerCase();
+                return !normalizedSearch || haystack.includes(normalizedSearch);
+            });
+
+            if (filteredProjects.length === 0) {
+                optionsContainer.innerHTML = '<div class="project-selector-empty">No matching projects</div>';
+                return;
+            }
+
+            optionsContainer.innerHTML = filteredProjects.map(project => {
+                const selector = document.getElementById('project-selector');
+                const isSelected = project.dir_name === selector?.value;
+                const safeDirName = escapeProjectSelectorHtml(project.dir_name);
+                return `
+                    <button type="button"
+                            class="project-selector-option${isSelected ? ' is-selected' : ''}"
+                            role="option"
+                            aria-selected="${isSelected}"
+                            title="${escapeProjectSelectorHtml(getProjectSelectorMeta(project))}"
+                            data-project-dir="${safeDirName}"
+                            onclick="selectCustomProject(this.dataset.projectDir)">
+                        <span class="project-selector-option-name">${escapeProjectSelectorHtml(getProjectSelectorLabel(project))}</span>
+                        <span class="project-selector-option-path">${safeDirName}</span>
+                    </button>`;
+            }).join('');
+        }
+
+        function selectCustomProject(dirName) {
+            const selector = document.getElementById('project-selector');
+            if (!selector) { return; }
+            selector.value = dirName;
+            updateProjectSelectorLabel();
+            closeProjectSelector();
+            switchProject();
+        }
+
+        document.addEventListener('click', event => {
+            if (!event.target.closest('[data-project-selector]')) {
+                closeProjectSelector();
+            }
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                closeProjectSelector();
+            }
+        });
+
+        // Project selector functions (local mode only)
+        async function loadRecentProjects() {
+            try {
+                const response = await fetch('/api/recent-projects');
+                const data = await response.json();
+                
+	                if (data.projects && data.projects.length > 0) {
+	                    // Get current project
+	                    const currentResponse = await fetch('/api/project');
+	                    const currentData = await currentResponse.json();
+	                    const currentDirName = currentData.log_dir_name;
+
+	                    syncProjectSelector(data.projects, currentDirName);
+	                }
+            } catch (error) {
+                console.error('Error loading recent projects:', error);
+            }
+        }
+        
+        async function switchProject() {
+            const selector = document.getElementById('project-selector');
+            const dirName = selector.value;
+            
+            if (!dirName) {
+                // Reset to current project
+                loadRecentProjects();
+                return;
+            }
+            
+            // Navigate to project-specific URL
+            window.location.href = `/project/${dirName}`;
+        }
+        
+        // Show empty state for local mode when no project is selected
+        async function showEmptyState() {
+            // Update header to show project selector only
+            document.getElementById('project-info').innerHTML = 
+                `<div class="project-selector-container">
+                    <div class="project-selector-main">
+                        ${renderProjectSelectorMarkup('Select a project...')}
+                    </div>
+                    <div class="project-selector-status">
+                        <span id="header-project-status" class="project-selector-status-text">Select a project to analyze your Codex usage</span>
+                        <div class="project-selector-info">
+                            <span class="tooltip-info-icon project-selector-info-icon"
+                                  onmouseover="showTooltip('log-tooltip-empty')" 
+                                  onmouseout="hideTooltip('log-tooltip-empty')">ⓘ</span>
+                            <div id="log-tooltip-empty" class="tooltip-dark position-below tooltip-sm"></div>
+                        </div>
+                    </div>
+                </div>`;
+            
+            // Populate the tooltip content
+            const logTooltipEmpty = document.getElementById('log-tooltip-empty');
+            if (logTooltipEmpty) {
+                logTooltipEmpty.innerHTML = CODEX_LOGS_TOOLTIP;
+            }
+            
+            // Hide refresh, export, and share buttons in empty state
+            const refreshButton = document.getElementById('refresh-button');
+            if (refreshButton) {
+                refreshButton.style.display = 'none';
+            }
+            const exportButton = document.getElementById('export-button');
+            if (exportButton) {
+                exportButton.style.display = 'none';
+            }
+            const shareButton = document.getElementById('share-button');
+            if (shareButton) {
+                shareButton.style.display = 'none';
+            }
+            
+            // Update main content area with empty state
+            document.getElementById('overview-stats').innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 2rem;">
+                </div>
+            `;
+            
+            // Hide all other sections
+            document.querySelectorAll('.charts-section, .user-commands-section, .messages-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Load and display recent projects
+            try {
+                const response = await fetch('/api/recent-projects');
+                const data = await response.json();
+                
+	                if (data.projects && data.projects.length > 0) {
+	                    syncProjectSelector(data.projects);
+                    
+                    // Update header message if projects are available
+                    if (data.projects.length > 0) {
+                        const headerStatus = document.getElementById('header-project-status');
+                        if (headerStatus) {
+                            headerStatus.innerHTML = `Found <strong>${data.projects.length}</strong> projects in your Codex logs`;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading recent projects:', error);
+            }
+        }
+        
+        // Modal setup moved to message-modal.js
+        
+        // Go to row functions
+        // Shared helper function for paginated tables
+        // goToRowInPaginatedTable function moved to utils.js
+        
+        // goToMessageRow functionality moved to messages-tab.js
+        
+        // goToCommandRow functionality moved to commands-tab.js
+        
+        // Shared helper to highlight a row
+        // Note: highlightRow is now available from utils.js
+        
+        // Shared helper to find and highlight a row by line number in JSONL table
+        function findAndHighlightJsonlRow(rowNum, tbodySelector = '#jsonlTableBody') {
+            const rows = document.querySelectorAll(`${tbodySelector} tr`);
+            for (let i = 0; i < rows.length; i++) {
+                const lineNum = parseInt(rows[i].cells[0].textContent);
+                if (lineNum === rowNum) {
+                    rows[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    highlightRow(rows[i], 2000);
+                    break;
+                }
+            }
+        }
+        
+        // goToJsonlRow functionality moved to jsonl-viewer.js
+        
+        // Share is always available
+        window.shareEnabled = true;
+        
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', initDashboard);
+        
+        // Share functionality
+        async function shareDashboard() {
+            const shareButton = document.getElementById('share-button');
+            shareButton.disabled = true;
+            shareButton.textContent = 'Creating link...';
+            
+            try {
+                // Show share options modal
+                const shareOptions = await showShareOptionsModal();
+                if (!shareOptions) {
+                    shareButton.disabled = false;
+                    shareButton.textContent = 'Share';
+                    return; // User cancelled
+                }
+                
+                // Extract chart configurations instead of PNG images
+                const charts = ExportModule.getChartConfigurations();
+                
+                // Create share link
+                const response = await fetch('/api/share', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        charts,
+                        project_name: shareOptions.projectName,
+                        make_public: shareOptions.makePublic,
+                        include_commands: shareOptions.includeCommands,
+                        statistics: window.statistics,
+                        user_commands: shareOptions.includeCommands ? (window.userCommands || []) : []
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Show share modal with link (no expiration date)
+                showShareModal(data.url, data.is_public);
+                
+            } catch (error) {
+                alert('Failed to create share link: ' + error.message);
+            } finally {
+                shareButton.disabled = false;
+                shareButton.textContent = 'Share';
+            }
+        }
+        
+        // Share options modal
+        async function showShareOptionsModal() {
+            return new Promise((resolve) => {
+                // Get the default project name
+                const defaultProjectName = window.statistics?.overview?.log_dir_name || 
+                                         window.statistics?.overview?.project_name || 
+                                         'Untitled Project';
+                
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.style.display = 'block';
+                modal.innerHTML = `
+                    <div class="modal-content share-modal">
+                        <h3 class="share-modal-title">Share Dashboard</h3>
+                        <p class="share-modal-description">Name your project and choose what to include:</p>
+                        
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
+                                Project Name
+                            </label>
+                            <input type="text" 
+                                   id="project-name-input" 
+                                   value="${defaultProjectName.replace(/"/g, '&quot;')}"
+                                   placeholder="Enter project name"
+                                   style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.95rem;">
+                        </div>
+                        
+                        <div class="share-options">
+                            <label class="share-option-container" style="opacity: 0.7; cursor: not-allowed;">
+                                <input type="checkbox" id="include-stats-checkbox" checked disabled class="share-checkbox">
+                                <div>
+                                    <span class="share-option-label">📊 Statistics & Charts</span>
+                                </div>
+                            </label>
+                            
+                            <label class="share-option-container">
+                                <input type="checkbox" id="include-commands-checkbox" class="share-checkbox">
+                                <div>
+                                    <span class="share-option-label">📝 User Commands Table</span>
+                                    <br>
+                                    <small class="share-option-description">Make sure they don't include your private keys!</small>
+                                </div>
+                            </label>
+                            
+                            <label class="share-option-container">
+                                <input type="checkbox" id="make-public-checkbox" class="share-checkbox">
+                                <div>
+                                    <span class="share-option-label">🌐 List on codex-logbook.dev</span>
+                                    <br>
+                                    <small class="share-option-description">Helpful for others to learn from your usage.</small>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <div class="share-info">
+                            <p style="margin: 1rem 0 0.5rem 0; font-size: 0.875rem; color: #7A6549;">
+                                ℹ️ Contact us to delete your shared links.
+                            </p>
+                        </div>
+                        
+                        <div class="modal-button-container">
+                            <button onclick="window.cancelShare()" class="modal-button modal-button-cancel">
+                                Cancel
+                            </button>
+                            <button onclick="window.confirmShare()" class="modal-button modal-button-primary">
+                                Create Link
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                window.confirmShare = () => {
+                    const projectNameInput = document.getElementById('project-name-input');
+                    const projectName = (projectNameInput?.value || '').trim() || 'Untitled Project';
+                    const includeCommands = document.getElementById('include-commands-checkbox').checked;
+                    const makePublic = document.getElementById('make-public-checkbox').checked;
+                    document.body.removeChild(modal);
+                    resolve({ projectName, includeCommands, makePublic });
+                };
+                
+                window.cancelShare = () => {
+                    document.body.removeChild(modal);
+                    resolve(null);
+                };
+                
+                // Close on outside click
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        window.cancelShare();
+                    }
+                });
+            });
+        }
+        
+        // Show share link modal
+        function showShareModal(url, isPublic) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-content share-link-modal">
+                    <h3 class="share-modal-title">Share Link Created!</h3>
+                    <p class="share-modal-description">Your dashboard has been shared successfully.</p>
+                    
+                    <div class="share-link-container">
+                        <input type="text" value="${url}" readonly class="share-link-input" 
+                               onclick="this.select(); navigator.clipboard.writeText(this.value).then(() => {
+                                   const toast = document.createElement('div');
+                                   toast.textContent = 'Copied!';
+                                   toast.style.cssText = 'position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: #FFFCF6; color: #3A2A18; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; box-shadow: 0 2px 8px rgba(120,80,30,0.1); z-index: 1000;';
+                                   this.parentElement.style.position = 'relative';
+                                   this.parentElement.appendChild(toast);
+                                   setTimeout(() => toast.remove(), 2000);
+                               });">
+                    </div>
+                    
+                    <div class="share-link-footer">
+                        <div class="share-link-info">
+                            <span class="share-link-info-icon">${isPublic ? '🌐' : '🔒'}</span>
+                            ${isPublic ? 'Public gallery listing' : 'Private link'}<br>
+                        </div>
+                        <button onclick="window.closeShareModal()" class="modal-button-done">
+                            Done
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            window.closeShareModal = () => {
+                document.body.removeChild(modal);
+            };
+            
+            // Close on outside click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    window.closeShareModal();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
