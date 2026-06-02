@@ -9,11 +9,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Smeet97Kathiria/codex-logbook/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Smeet97Kathiria/codex-logbook?style=flat&label=stars&color=f97316"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f97316"></a>
-  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3b82f6">
-  <img alt="Local first" src="https://img.shields.io/badge/local--first-yes-22c55e">
-  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-111827">
-  <img alt="OpenAI Codex" src="https://img.shields.io/badge/OpenAI-Codex-412991">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-2563eb">
+  <img alt="Built for OpenAI Codex" src="https://img.shields.io/badge/built%20for-OpenAI%20Codex-412991">
+  <img alt="Local first" src="https://img.shields.io/badge/local--first-dashboard-16a34a">
+  <img alt="No telemetry" src="https://img.shields.io/badge/no-telemetry-111827">
+  <img alt="Last commit" src="https://img.shields.io/github/last-commit/Smeet97Kathiria/codex-logbook?label=updated&color=64748b">
 </p>
 
 <p align="center">
