@@ -1,7 +1,7 @@
 # Codex Logbook
 
 <p align="center">
-  <img src="assets/codex_logbook/logo-transparent.png" width="96" alt="Codex Logbook logo">
+  <img src="assets/codex_logbook/logo-orange.svg" width="96" alt="Codex Logbook logo">
 </p>
 
 <p align="center">
