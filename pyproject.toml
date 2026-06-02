@@ -42,8 +42,8 @@ codex-logbook = "codex_logbook.cli:cli"
 [project.urls]
 Homepage = "https://codex-logbook.dev"
 Documentation = "https://codex-logbook.dev/docs"
-Repository = "https://github.com/smeetkathiria/codex-logbook"
-Issues = "https://github.com/smeetkathiria/codex-logbook/issues"
+Repository = "https://github.com/Smeet97Kathiria/codex-logbook"
+Issues = "https://github.com/Smeet97Kathiria/codex-logbook/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["codex_logbook"]

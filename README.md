@@ -1,63 +1,34 @@
 # Codex Logbook
 
-**Codex Logbook turns your local Codex logs into a clear analytics dashboard for tokens, cost, tool usage, project activity, and workflow quality.**
+<p align="center">
+  <img src="assets/codex_logbook/logo-with-text-transparent.png" width="420" alt="Codex Logbook logo">
+</p>
 
-If you use OpenAI Codex every day, your logs contain signals that can help you work smarter: which projects consume the most context, which prompts trigger long tool chains, where costs concentrate, and how your command patterns change over time. Codex Logbook makes those signals visible.
+<p align="center">
+  <strong>A privacy-first dashboard for understanding your OpenAI Codex logs, tokens, costs, projects, and workflow patterns.</strong>
+</p>
 
-[Quickstart](#quickstart) · [Why Use It](#why-use-it) · [Features](#features) · [Privacy](#privacy) · [Development](#development) · [License](#license)
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f97316"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3b82f6">
+  <img alt="Local first" src="https://img.shields.io/badge/local--first-yes-22c55e">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-111827">
+  <img alt="OpenAI Codex" src="https://img.shields.io/badge/OpenAI-Codex-412991">
+</p>
 
-## Why Use It
-
-Codex is powerful, but heavy usage can become hard to reason about. Codex Logbook helps you answer practical questions:
-
-- Which projects are using the most tokens?
-- How much would this work cost through direct API pricing?
-- Which workflows create the longest command chains?
-- How often does Codex need tools to complete a request?
-- Which projects are active, stale, expensive, or context-heavy?
-- Where can you adjust prompts to reduce token waste?
-
-Use it to review your own usage, compare projects, plan token budgets, and make better decisions when working with Codex.
-
-## Features
-
-- **Project overview**: See all detected Codex projects, last activity, duration, cost, commands, token volume, and data status.
-- **Token analytics**: Track input/output token volume over time and by project.
-- **Cost visibility**: Estimate direct API cost from token usage.
-- **Tool usage diagnostics**: See tool-use rate, tools per command, tool trends, and long command chains.
-- **Command analysis**: Review user commands, step counts, tool counts, models, token estimates, and interruptions.
-- **Message explorer**: Search and inspect parsed conversation messages.
-- **JSONL viewer**: Inspect source log lines when you need exact evidence.
-- **Local-first dashboard**: Process logs on your machine and serve the dashboard locally.
-- **Share workflow**: Create optional shared dashboard links when you explicitly choose to share.
-
-## Screenshots
-
-The dashboard is designed for fast scanning across projects and deep inspection inside a single project. Screenshots below keep the owner/path context visible while masking project-name suffixes for public sharing.
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#why-codex-logbook">Why Codex Logbook</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#development">Development</a>
+</p>
 
 <p align="center">
   <img src="assets/screenshots/codex-logbook-overview.png" width="1000" alt="Codex Logbook project overview dashboard">
 </p>
 
-<p align="center">
-  <strong>Project overview:</strong> compare cost, command count, tokens per command, step depth, and token volume across Codex projects.
-</p>
-
-<p align="center">
-  <img src="assets/screenshots/codex-logbook-project-summary.png" width="1000" alt="Codex Logbook project analytics summary">
-</p>
-
-<p align="center">
-  <strong>Project analytics:</strong> inspect command behavior, tool use, interruption rate, cache reads, and cost signals inside a project.
-</p>
-
-<p align="center">
-  <img src="assets/screenshots/codex-logbook-project-charts.png" width="1000" alt="Codex Logbook project chart breakdowns">
-</p>
-
-<p align="center">
-  <strong>Chart breakdowns:</strong> review tool trends, daily costs, token usage, and tool distribution for better Codex workflow decisions.
-</p>
+Codex Logbook turns local Codex logs into a clear analytics dashboard for token usage, estimated cost, tool activity, command behavior, project health, and workflow quality. It helps heavy Codex users understand where time, context, and tokens go without sending logs to a third-party analytics service.
 
 ## Quickstart
 
@@ -66,7 +37,7 @@ Requirement: **Python 3.10+**
 ### From Source
 
 ```bash
-git clone https://github.com/smeetkathiria/codex-logbook.git
+git clone https://github.com/Smeet97Kathiria/codex-logbook.git
 cd codex-logbook
 
 python3 -m venv .venv
@@ -102,6 +73,86 @@ codex-logbook init
 pip install codex-logbook
 codex-logbook init
 ```
+
+## Why Codex Logbook
+
+Codex is powerful, but heavy usage can become hard to reason about. Your local logs contain useful signals:
+
+- Which projects are using the most tokens?
+- Where are estimated costs concentrated?
+- Which prompts create long tool chains?
+- How often does Codex need tools to complete work?
+- Which projects are active, stale, expensive, or context-heavy?
+- Where can better prompts reduce token waste?
+
+Codex Logbook makes those patterns visible so you can review usage, compare projects, plan token budgets, and improve your Codex workflow over time.
+
+## Features
+
+- **Project overview**: Compare detected Codex projects by activity, duration, cost, commands, token volume, and data status.
+- **Token analytics**: Track input and output token volume over time and by project.
+- **Cost visibility**: Estimate direct API cost from token usage.
+- **Tool diagnostics**: See tool-use rate, tools per command, tool trends, and long command chains.
+- **Command analysis**: Review user commands, step counts, tool counts, models, token estimates, and interruptions.
+- **Message explorer**: Search and inspect parsed conversation messages.
+- **JSONL viewer**: Inspect source log lines when you need exact evidence.
+- **Local-first dashboard**: Process logs on your machine and serve the dashboard locally.
+- **Optional sharing**: Create shared dashboard links only when you explicitly choose to share.
+
+## Privacy
+
+> Codex Logbook is local-first by default. No telemetry. No background uploads. Your Codex logs stay on your machine unless you explicitly create a share link.
+
+- Local log processing
+- Local dashboard by default
+- No tracking scripts
+- No usage telemetry
+- No background upload
+- Optional share workflow for intentionally published dashboards
+
+Always review command text before sharing. Your commands may include private project details, file paths, or sensitive context.
+
+## What You Can See
+
+Codex Logbook gives you practical metrics for understanding real Codex usage:
+
+| Area | What it helps you understand |
+| --- | --- |
+| Token volume | Which projects consume the most input/output tokens |
+| Estimated cost | Where direct API cost would concentrate |
+| Tool usage | How often Codex relies on terminal, file, or browser tools |
+| Steps per command | Which requests create long execution chains |
+| Prompt cache read | How much context reuse appears in your logs |
+| Project activity | Which projects are active, stale, or data-heavy |
+| Command history | Which requests produced expensive or complex sessions |
+
+## Dashboard Tour
+
+The dashboard is designed for fast scanning across projects and deep inspection inside a single project. Screenshots below keep the owner/path context visible while masking project-name suffixes for public sharing.
+
+<p align="center">
+  <img src="assets/screenshots/codex-logbook-project-summary.png" width="1000" alt="Codex Logbook project analytics summary">
+</p>
+
+<p align="center">
+  <strong>Project analytics:</strong> inspect command behavior, tool use, interruption rate, cache reads, and cost signals inside a project.
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/codex-logbook-project-charts.png" width="1000" alt="Codex Logbook project chart breakdowns">
+</p>
+
+<p align="center">
+  <strong>Chart breakdowns:</strong> review tool trends, daily costs, token usage, and tool distribution for better Codex workflow decisions.
+</p>
+
+## Perfect For
+
+- Developers who use Codex daily
+- Builders tracking token usage and cost patterns
+- Teams reviewing AI coding workflows
+- Power users optimizing prompts and context habits
+- Anyone who wants local analytics without giving up control of their logs
 
 ## How It Works
 
@@ -171,18 +222,6 @@ Use Codex Logbook during weekly reviews or after major project work:
 
 Better visibility leads to better prompts, cleaner sessions, and smarter token decisions.
 
-## Privacy
-
-Codex Logbook is local-first:
-
-- Local log processing
-- Local dashboard by default
-- No telemetry
-- No background upload
-- Shared dashboards only when you explicitly create a share link
-
-Always review command text before sharing. Your commands may include private project details.
-
 ## Troubleshooting
 
 Port already in use:
@@ -214,7 +253,7 @@ codex-logbook config show
 ## Development
 
 ```bash
-git clone https://github.com/smeetkathiria/codex-logbook.git
+git clone https://github.com/Smeet97Kathiria/codex-logbook.git
 cd codex-logbook
 
 python3 -m venv .venv
@@ -243,7 +282,7 @@ http://127.0.0.1:8081
 
 ## Support The Project
 
-If Codex Logbook helps you understand your Codex usage, optimize token spend, or improve your coding-agent workflow, please star the repository on GitHub. Stars help more OpenAI Codex users discover the project and make better decisions with their own data.
+If Codex Logbook helps you understand your Codex usage, please star the repo so more Codex users can discover a privacy-first way to analyze their workflow.
 
 ## License
 
