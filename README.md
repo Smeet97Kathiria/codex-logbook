@@ -158,6 +158,10 @@ The overview is for scanning everything quickly. The project page is for digging
 
 Codex Logbook reads local Codex data, prepares dashboard-ready project logs, computes the metrics, and starts a local web dashboard.
 
+<p align="center">
+  <img src="assets/social/codex-logbook-hero.png" width="1000" alt="Codex Logbook local logs to analytics workflow">
+</p>
+
 By default it looks for:
 
 ```text
