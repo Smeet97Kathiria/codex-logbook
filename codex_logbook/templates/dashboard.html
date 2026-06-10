@@ -28,6 +28,7 @@
     <script src="/static/js/messages-tab.js"></script>
     <script src="/static/js/memory-monitor.js"></script>
     <script src="/static/js/project-detector.js"></script>
+    <script src="/static/js/realtime.js?v=live-codex-updates-v13"></script>
 </head>
 <body>
     <div class="header">
@@ -531,6 +532,12 @@
         let allMessages = [];
         let filteredMessages = [];
         let statistics = {};
+        window.currentLogPath = null;
+        let realtimeDashboardRefreshTimer = null;
+        let realtimeChartRefreshTimer = null;
+        let realtimeNumbersRefreshInterval = null;
+        let realtimeNumbersRefreshInFlight = false;
+        let latestRealtimeStatistics = null;
         // Messages tab state variables moved to messages-tab.js
         
         
@@ -601,6 +608,135 @@
                     messageCountEl.textContent = originalText;
                 }
             }
+        }
+
+        async function refreshDashboardNumbersFromRealtime(message, options = {}) {
+            const silent = options.silent === true;
+            if (window.currentLogPath && Array.isArray(message.log_paths) && !message.log_paths.includes(window.currentLogPath)) {
+                return;
+            }
+
+            const refreshButton = document.getElementById('refresh-button');
+            const originalText = refreshButton?.innerHTML || 'Refresh';
+            if (!silent && refreshButton) {
+                refreshButton.innerHTML = 'Live update...';
+                refreshButton.disabled = true;
+            }
+
+            try {
+                realtimeNumbersRefreshInFlight = true;
+                const timezoneOffset = new Date().getTimezoneOffset();
+                const dashboardDataUrl = silent
+                    ? `${apiBase}/live-dashboard-data`
+                    : `${apiBase}/dashboard-data?timezone_offset=${-timezoneOffset}`;
+                const dataResponse = await fetch(dashboardDataUrl);
+                if (!dataResponse.ok) {
+                    throw new Error('Failed to load realtime dashboard data');
+                }
+
+                const dashboardData = await dataResponse.json();
+                statistics = dashboardData.statistics;
+                window.statistics = statistics;
+                latestRealtimeStatistics = statistics;
+
+                if (dashboardData.messages_page) {
+                    const messagesPage = dashboardData.messages_page;
+                    allMessages = messagesPage.messages;
+                    window.allMessages = allMessages;
+                    window.totalMessageCount = dashboardData.message_count;
+                    window.messagesInitialLoad = dashboardData.config?.messages_initial_load || window.messagesInitialLoad || 1000;
+                    window.memoryMonitorEnabled = dashboardData.config?.enable_memory_monitor || false;
+                    window.maxDateRangeDays = dashboardData.config?.max_date_range_days || window.maxDateRangeDays || 30;
+                    window.messagesFullyLoaded = false;
+                }
+
+                window.StatsCardsModule.displayOverviewStats(statistics);
+                if (!silent) {
+                    initializeCommandsTable();
+                    initializeFilters();
+                    applyFilters();
+                }
+
+                if (!silent && refreshButton) {
+                    refreshButton.innerHTML = 'Updated live';
+                }
+
+                scheduleRealtimeChartRefresh();
+            } catch (error) {
+                console.error('Realtime dashboard update failed:', error);
+                if (!silent && refreshButton) {
+                    refreshButton.innerHTML = 'Live update failed';
+                }
+            } finally {
+                realtimeNumbersRefreshInFlight = false;
+                if (!silent) {
+                    setTimeout(() => {
+                        if (refreshButton) {
+                            refreshButton.innerHTML = originalText;
+                            refreshButton.disabled = false;
+                        }
+                    }, 1500);
+                }
+            }
+        }
+
+        function scheduleRealtimeChartRefresh() {
+            if (realtimeChartRefreshTimer) {
+                return;
+            }
+
+            realtimeChartRefreshTimer = setTimeout(async () => {
+                realtimeChartRefreshTimer = null;
+                if (!latestRealtimeStatistics) {
+                    return;
+                }
+
+                try {
+                    await initializeCharts(latestRealtimeStatistics);
+                    console.log('Realtime chart refresh completed');
+                } catch (error) {
+                    console.error('Realtime chart refresh failed:', error);
+                }
+            }, 120000);
+        }
+
+        window.handleRealtimeDashboardUpdate = function(message) {
+            clearTimeout(realtimeDashboardRefreshTimer);
+            realtimeDashboardRefreshTimer = setTimeout(() => {
+                refreshDashboardNumbersFromRealtime(message, { silent: true });
+            }, 300);
+        };
+
+        function startRealtimeNumbersRefreshLoop() {
+            if (window.__codexDashboardNumbersInterval) {
+                clearInterval(window.__codexDashboardNumbersInterval);
+            }
+
+            realtimeNumbersRefreshInterval = setInterval(() => {
+                if (!window.currentLogPath || document.hidden || realtimeNumbersRefreshInFlight) {
+                    return;
+                }
+
+                const intervalMs = window.__codexRealtimeConnected ? 15000 : 5000;
+                const lastRun = window.__codexDashboardNumbersLastRun || 0;
+                if (Date.now() - lastRun < intervalMs) {
+                    return;
+                }
+                window.__codexDashboardNumbersLastRun = Date.now();
+
+                refreshDashboardNumbersFromRealtime(
+                    { log_paths: [window.currentLogPath] },
+                    { silent: true }
+                );
+            }, 1000);
+            window.__codexDashboardNumbersInterval = realtimeNumbersRefreshInterval;
+
+            window.addEventListener('beforeunload', () => {
+                if (window.__codexDashboardNumbersInterval) {
+                    clearInterval(window.__codexDashboardNumbersInterval);
+                    window.__codexDashboardNumbersInterval = null;
+                }
+            }, { once: true });
         }
         
         function switchTab(tabName) {
@@ -686,6 +822,8 @@
                 const projectCheckStart = performance.now();
                 const projectResponse = await fetch('/api/project');
                 const projectData = await projectResponse.json();
+                window.currentLogPath = projectData.log_path || null;
+                window.CodexLogbookRealtime?.subscribeProject?.(window.currentLogPath);
                 timings.projectCheck = performance.now() - projectCheckStart;
                 console.log(`✓ Project check: ${timings.projectCheck.toFixed(2)}ms`);
                 
@@ -804,6 +942,7 @@
                         loadRecentProjects();
                     }, 100);
                 }
+                startRealtimeNumbersRefreshLoop();
                 
                 // Add global click listener to close error tooltip
                 document.addEventListener('click', (e) => {

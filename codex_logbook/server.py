@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import importlib.metadata
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +31,12 @@ from codex_logbook.utils.cache_warmer import warm_recent_projects
 from codex_logbook.utils.local_cache import LocalCacheService
 from codex_logbook.utils.log_finder import find_logs
 from codex_logbook.utils.memory_cache import MemoryCache
+from codex_logbook.realtime import (
+    RealtimeLogWatcher,
+    RealtimeUpdateHub as DecoupledRealtimeUpdateHub,
+    collect_realtime_project_snapshots,
+)
+from codex_logbook.live_delta import LiveDeltaService
 
 # Load environment variables
 load_dotenv()
@@ -80,6 +87,8 @@ max_projects = config.get("cache_max_projects")
 max_mb_per_project = config.get("cache_max_mb_per_project")
 cache_warm_on_startup = config.get("cache_warm_on_startup")
 enable_background_processing = config.get("enable_background_processing")
+enable_realtime_updates = config.get("enable_realtime_updates")
+realtime_poll_seconds = float(config.get("realtime_poll_seconds", 2))
 
 memory_cache = MemoryCache(max_projects=max_projects, max_mb_per_project=max_mb_per_project)
 logger.debug(f"Memory cache initialized: {max_projects} projects, max {max_mb_per_project}MB per project")
@@ -93,6 +102,127 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 # Current project being analyzed
 current_project_path: str | None = None
 current_log_path: str | None = None
+
+
+realtime_hub = DecoupledRealtimeUpdateHub()
+realtime_watcher: RealtimeLogWatcher | None = None
+refresh_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+live_delta_service = LiveDeltaService()
+
+
+def refresh_log_path_if_changed_sync(log_path: str, timezone_offset: int = 0) -> dict[str, Any]:
+    """Synchronously refresh one log path if cache metadata says its files changed."""
+    import time
+
+    start_time = time.time()
+    has_changes = cache_service.has_changes(log_path)
+
+    if not has_changes:
+        return {
+            "status": "success",
+            "message": "No changes detected - using cached data",
+            "files_changed": False,
+            "refresh_time_ms": (time.time() - start_time) * 1000,
+        }
+
+    memory_cache.invalidate(log_path)
+    cache_service.invalidate_cache(log_path)
+
+    processor = CodexLogProcessor(log_path)
+    messages, statistics = processor.process_logs(timezone_offset_minutes=timezone_offset)
+
+    cache_service.save_cached_stats(log_path, statistics)
+    cache_service.save_cached_messages(log_path, messages)
+    memory_cache.put(log_path, messages, statistics)
+
+    return {
+        "status": "success",
+        "message": "Files changed - data refreshed successfully",
+        "files_changed": True,
+        "message_count": len(messages),
+        "table_stats": project_table_stats_from_stats(statistics),
+        "refresh_time_ms": (time.time() - start_time) * 1000,
+    }
+
+
+async def refresh_log_path_if_changed(log_path: str, timezone_offset: int = 0) -> dict[str, Any]:
+    """Refresh one log path in a worker thread to keep the event loop responsive."""
+    async with refresh_locks[log_path]:
+        result = await asyncio.to_thread(refresh_log_path_if_changed_sync, log_path, timezone_offset)
+        if result.get("files_changed"):
+            live_delta_service.reset_project(log_path)
+        return result
+
+
+async def load_or_process_project_stats_async(log_path: str) -> dict[str, Any] | None:
+    """Load/process project stats with a per-project lock around cache writes."""
+    async with refresh_locks[log_path]:
+        return await asyncio.to_thread(load_or_process_project_stats, log_path)
+
+
+def load_stale_or_memory_table_stats(log_path: str) -> dict[str, Any] | None:
+    """Load cached historical compact stats without forcing a cache refresh."""
+    memory_result = memory_cache.get(log_path)
+    if memory_result:
+        _, stats = memory_result
+        return project_table_stats_from_stats(stats)
+
+    cached_stats = cache_service.get_cached_stats(log_path, allow_stale=True)
+    if cached_stats:
+        return project_table_stats_from_stats(cached_stats)
+
+    return None
+
+
+def load_stale_or_memory_statistics(log_path: str) -> dict[str, Any] | None:
+    """Load full cached historical stats without forcing a cache refresh."""
+    memory_result = memory_cache.get(log_path)
+    if memory_result:
+        _, stats = memory_result
+        return stats
+
+    return cache_service.get_cached_stats(log_path, allow_stale=True)
+
+
+def statistics_with_live_delta(stats: dict[str, Any], log_path: str) -> dict[str, Any]:
+    """Apply live token/command deltas to a full statistics payload copy."""
+    stats_copy = json.loads(json.dumps(stats))
+    delta = live_delta_service.project_delta(log_path)
+
+    overview = stats_copy.setdefault("overview", {})
+    total_tokens = overview.setdefault("total_tokens", {})
+    total_tokens["input"] = total_tokens.get("input", 0) + delta.get("total_input_tokens", 0)
+    total_tokens["output"] = total_tokens.get("output", 0) + delta.get("total_output_tokens", 0)
+    total_tokens["cache_read"] = total_tokens.get("cache_read", 0) + delta.get("total_cache_read", 0)
+    total_tokens["cache_creation"] = total_tokens.get("cache_creation", 0) + delta.get("total_cache_write", 0)
+    overview["total_cost"] = overview.get("total_cost", 0) + delta.get("total_cost", 0)
+    overview["total_messages"] = overview.get("total_messages", 0) + delta.get("message_count", 0)
+
+    interactions = stats_copy.setdefault("user_interactions", {})
+    if "user_commands_analyzed" in interactions:
+        interactions["user_commands_analyzed"] = interactions.get("user_commands_analyzed", 0) + delta.get(
+            "total_commands", 0
+        )
+    if interactions.get("user_commands_analyzed"):
+        token_volume = total_tokens.get("input", 0) + total_tokens.get("output", 0)
+        interactions["avg_tokens_per_command"] = token_volume / interactions["user_commands_analyzed"]
+
+    return stats_copy
+
+
+async def consume_live_delta_for_log_path(log_path: str) -> dict[str, Any]:
+    """Consume appended JSONL bytes and return merged stats without cache writes."""
+    increment = await asyncio.to_thread(live_delta_service.consume_project, log_path)
+    base_stats = await asyncio.to_thread(load_stale_or_memory_table_stats, log_path)
+    merged_stats = live_delta_service.merged_table_stats(base_stats, log_path)
+
+    return {
+        "status": "success",
+        "files_changed": bool(increment.get("message_count")),
+        "message_count": increment.get("message_count", 0),
+        "table_stats": merged_stats,
+        "live_delta": increment,
+    }
 
 
 def project_table_stats_from_stats(stats: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +244,54 @@ def project_table_stats_from_stats(stats: dict[str, Any]) -> dict[str, Any]:
         "last_message_date": overview.get("date_range", {}).get("end"),
         "total_cost": overview.get("total_cost", 0),
     }
+
+
+def overview_numbers_from_projects(projects: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build lightweight overview number summaries from compact project stats."""
+    import time
+    from datetime import datetime
+
+    thirty_days_ago_ms = (time.time() - (30 * 24 * 60 * 60)) * 1000
+    totals = {
+        "input": 0,
+        "output": 0,
+        "cost": 0,
+        "input30": 0,
+        "output30": 0,
+        "cost30": 0,
+        "projects_with_stats": 0,
+    }
+
+    for project in projects:
+        stats = project.get("stats")
+        if not stats:
+            continue
+
+        totals["projects_with_stats"] += 1
+        input_tokens = stats.get("total_input_tokens", 0)
+        output_tokens = stats.get("total_output_tokens", 0)
+        cost = stats.get("total_cost", 0)
+
+        totals["input"] += input_tokens
+        totals["output"] += output_tokens
+        totals["cost"] += cost
+
+        last_date = stats.get("last_message_date") or project.get("last_modified")
+        last_time_ms = None
+        if isinstance(last_date, (int, float)):
+            last_time_ms = last_date * 1000
+        elif isinstance(last_date, str):
+            try:
+                last_time_ms = datetime.fromisoformat(last_date.replace("Z", "+00:00")).timestamp() * 1000
+            except ValueError:
+                last_time_ms = None
+
+        if last_time_ms is not None and last_time_ms >= thirty_days_ago_ms:
+            totals["input30"] += input_tokens
+            totals["output30"] += output_tokens
+            totals["cost30"] += cost
+
+    return totals
 
 
 def load_or_process_project_stats(log_path: str) -> dict[str, Any] | None:
@@ -205,6 +383,7 @@ async def background_stats_processor():
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on startup"""
+    global realtime_watcher
 
     # Run cache warming in the background so server can start accepting requests immediately
     async def warm_cache_background():
@@ -223,6 +402,35 @@ async def startup_event():
         asyncio.create_task(background_stats_processor())
     else:
         logger.debug("[Server] Background processing disabled")
+
+    if enable_realtime_updates:
+        logger.debug("[Server] Realtime websocket updates enabled - starting watcher")
+        realtime_watcher = RealtimeLogWatcher(
+            hub=realtime_hub,
+            collect_snapshots=lambda: collect_realtime_project_snapshots(
+                lambda: (current_project_path, current_log_path)
+            ),
+            refresh_log_path=lambda log_path: consume_live_delta_for_log_path(log_path),
+            get_current_log_path=lambda: current_log_path,
+            initialize_log_paths=live_delta_service.initialize_projects,
+            poll_seconds=realtime_poll_seconds,
+        )
+        asyncio.create_task(realtime_watcher.run())
+    else:
+        logger.debug("[Server] Realtime websocket updates disabled")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop background realtime tasks cleanly."""
+    if realtime_watcher:
+        realtime_watcher.stop()
+
+
+@app.websocket("/ws/updates")
+async def websocket_updates(websocket: WebSocket):
+    """Websocket endpoint for realtime dashboard update notifications."""
+    await realtime_hub.handle(websocket)
 
 
 # Root endpoint - serve overview page
@@ -517,6 +725,22 @@ async def get_dashboard_data(timezone_offset: int = 0):
     }
 
 
+@app.get("/api/live-dashboard-data")
+async def get_live_dashboard_data():
+    """Get realtime project numbers from cached historical stats plus live deltas."""
+    if not current_log_path:
+        raise HTTPException(status_code=400, detail="No project selected")
+
+    stats = await asyncio.to_thread(load_stale_or_memory_statistics, current_log_path)
+    if not stats:
+        raise HTTPException(status_code=404, detail="No cached project statistics available")
+
+    return {
+        "statistics": statistics_with_live_delta(stats, current_log_path),
+        "live_delta": live_delta_service.project_delta(current_log_path),
+    }
+
+
 # Messages endpoint - process or get cached
 @app.get("/api/messages")
 async def get_messages(limit: int | None = None, timezone_offset: int = 0):
@@ -634,54 +858,10 @@ async def refresh_data(request: dict):
     # Extract timezone offset from request body
     timezone_offset = request.get("timezone_offset", 0)
 
-    import time
-
-    start_time = time.time()
-
-    # Check if files have changed
-    has_changes = cache_service.has_changes(current_log_path)
-
-    if not has_changes:
-        # No changes - keep memory cache intact for fast reload
-        refresh_time = (time.time() - start_time) * 1000
-        logger.debug(f"No changes detected - keeping cache in {refresh_time:.2f}ms")
-
-        return JSONResponse(
-            {
-                "status": "success",
-                "message": "No changes detected - using cached data",
-                "files_changed": False,
-                "refresh_time_ms": refresh_time,
-            }
-        )
-
-    # Files have changed - reprocess
     try:
-        # Invalidate caches
-        memory_cache.invalidate(current_log_path)
-        cache_service.invalidate_cache(current_log_path)
-
-        # Reprocess
-        processor = CodexLogProcessor(current_log_path)
-        messages, statistics = processor.process_logs(timezone_offset_minutes=timezone_offset)
-
-        # Cache the new results
-        cache_service.save_cached_stats(current_log_path, statistics)
-        cache_service.save_cached_messages(current_log_path, messages)
-        memory_cache.put(current_log_path, messages, statistics)
-
-        refresh_time = (time.time() - start_time) * 1000
-        logger.debug(f"Files changed - data refreshed in {refresh_time:.2f}ms")
-
-        return JSONResponse(
-            {
-                "status": "success",
-                "message": "Files changed - data refreshed successfully",
-                "files_changed": True,
-                "message_count": len(messages),
-                "refresh_time_ms": refresh_time,
-            }
-        )
+        result = await refresh_log_path_if_changed(current_log_path, timezone_offset)
+        logger.debug(f"Refresh result for current project: {result}")
+        return JSONResponse(result)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing data: {str(e)}")
@@ -1013,7 +1193,7 @@ async def get_projects(
             # Add statistics from cache for cached projects
             for project in projects:
                 try:
-                    stats = await asyncio.to_thread(load_or_process_project_stats, project["log_path"])
+                    stats = await load_or_process_project_stats_async(project["log_path"])
                     project["stats"] = project_table_stats_from_stats(stats) if stats else None
                     project["in_cache"] = project["stats"] is not None
                     if project["stats"]:
@@ -1060,6 +1240,28 @@ async def get_projects(
 
         traceback.print_exc()
         return JSONResponse({"error": f"Failed to get projects: {str(e)}"}, status_code=500)
+
+
+# Global statistics endpoint
+@app.get("/api/overview-numbers")
+async def get_overview_numbers():
+    """Get lightweight realtime-ready overview number summaries."""
+    from codex_logbook.utils.log_finder import get_all_projects_with_metadata
+
+    try:
+        projects = get_all_projects_with_metadata()
+        for project in projects:
+            base_stats = await asyncio.to_thread(load_stale_or_memory_table_stats, project["log_path"])
+            project["stats"] = live_delta_service.merged_table_stats(base_stats, project["log_path"])
+
+        return JSONResponse(
+            {
+                "project_count": len(projects),
+                "numbers": overview_numbers_from_projects(projects),
+            }
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to get overview numbers: {str(e)}"}, status_code=500)
 
 
 # Global statistics endpoint

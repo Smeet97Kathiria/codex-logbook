@@ -24,6 +24,8 @@ let updateCheckInterval = null;
 let chartUpdateInterval = null;
 let projectUpdateMap = new Map(); // Track which projects have been updated
 let processedProjects = new Set(); // Track which projects have been fully processed
+let realtimeOverviewNumbersInterval = null;
+let realtimeOverviewNumbersInFlight = false;
 
 function getTokenVolume(stats = {}) {
   return (stats.total_input_tokens || 0) + (stats.total_output_tokens || 0);
@@ -32,6 +34,22 @@ function getTokenVolume(stats = {}) {
 function formatTokenVolume(stats = {}) {
   const volume = getTokenVolume(stats);
   return volume > 0 ? formatNumber(volume) : '-';
+}
+
+function formatRealtimeSummaryNumber(num) {
+  if (!num) {
+    return '0';
+  }
+
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(4)}M`;
+  }
+
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(2)}K`;
+  }
+
+  return num.toLocaleString();
 }
 
 // Initialize the page
@@ -55,10 +73,42 @@ document.addEventListener('DOMContentLoaded', async function() {
     
   // Start background updates for charts
   startChartUpdates();
+
+  hydrateOverviewProjectStatsOnce();
+  startRealtimeOverviewNumbersLoop();
+  startRealtimeOverviewTableUpdates();
 });
 
 // Start checking for background updates
 function startBackgroundUpdates() {
+  if (isOverviewRealtimePossible()) {
+    console.log('[Overview] Realtime available, delaying legacy project polling fallback');
+    setTimeout(() => {
+      if (!isOverviewRealtimeConnected()) {
+        startLegacyBackgroundUpdates();
+      }
+    }, 5000);
+    return;
+  }
+
+  startLegacyBackgroundUpdates();
+}
+
+function isOverviewRealtimePossible() {
+  return window.location.protocol === 'http:' || window.location.protocol === 'https:';
+}
+
+function isOverviewRealtimeConnected() {
+  const realtimeStatus = document.getElementById('realtime-status');
+  const realtimeStatusText = realtimeStatus ? realtimeStatus.textContent || '' : '';
+  return !!window.__codexRealtimeConnected || realtimeStatusText.includes('Realtime: live');
+}
+
+function startLegacyBackgroundUpdates() {
+  if (updateCheckInterval) {
+    return;
+  }
+
   // Clear any previous processed projects tracking
   processedProjects.clear();
     
@@ -313,6 +363,53 @@ function updateSingleRow(row, project) {
   }, 2000);
 }
 
+async function hydrateOverviewProjectStatsOnce() {
+  try {
+    const response = await fetch('/api/projects?include_stats=true');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const updatedProjects = data.projects || [];
+    const updatedByPath = new Map(updatedProjects.map(project => [project.log_path, project]));
+
+    allProjects = allProjects.map(project => {
+      const updated = updatedByPath.get(project.log_path);
+      if (!updated) {
+        return project;
+      }
+
+      return {
+        ...project,
+        stats: updated.stats ?? project.stats,
+        last_modified: updated.last_modified ?? project.last_modified,
+        in_cache: updated.in_cache ?? project.in_cache
+      };
+    });
+
+    filteredProjects = filteredProjects.map(project => {
+      const updated = allProjects.find(candidate => candidate.log_path === project.log_path);
+      return updated || project;
+    });
+
+    renderProjectsTable();
+    calculateQuickStats(allProjects);
+    updateOverviewRealtimeNumberSummaries();
+    updateOverviewRealtimeTimestamp();
+  } catch (error) {
+    console.error('[Overview] Initial project stats hydration failed:', error);
+  }
+}
+
+function updateVisibleProjectRow(project) {
+  const rows = Array.from(document.querySelectorAll('#projects-tbody tr[data-project-path]'));
+  const row = rows.find(candidate => candidate.getAttribute('data-project-path') === project.log_path);
+  if (row) {
+    updateSingleRow(row, project);
+  }
+}
+
 // Phase 1: Load projects list quickly
 async function loadProjects(retryCount = 0) {
   try {
@@ -320,7 +417,7 @@ async function loadProjects(retryCount = 0) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
         
-    const response = await fetch('/api/projects?include_stats=true', {
+    const response = await fetch('/api/projects?include_stats=false', {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -330,7 +427,10 @@ async function loadProjects(retryCount = 0) {
     }
         
     const data = await response.json();
-    allProjects = data.projects || [];
+    allProjects = (data.projects || []).map(project => ({
+      ...project,
+      stats: project.stats ?? null
+    }));
         
     console.log(`[Overview] Loaded ${allProjects.length} projects`);
         
@@ -720,6 +820,18 @@ async function loadGlobalStats() {
 
 // Start periodic chart updates
 function startChartUpdates() {
+  if (isOverviewRealtimePossible()) {
+    console.log('[Overview] Realtime available, using slow cache-backed chart refresh');
+    chartUpdateInterval = setInterval(async () => {
+      try {
+        await loadGlobalStats();
+      } catch (error) {
+        console.error('[Overview] Slow chart refresh failed:', error);
+      }
+    }, 120000);
+    return;
+  }
+
   // Only start chart updates if background updates are actually needed
   const projectsWithoutStats = allProjects.filter(p => p.stats === null).length;
     
@@ -1098,6 +1210,240 @@ function showError(message) {
         </tr>
     `;
 }
+
+let realtimeOverviewChartRefreshTimer = null;
+let realtimeOverviewFullReloadTimer = null;
+
+function scheduleRealtimeOverviewCharts() {
+  if (realtimeOverviewChartRefreshTimer) {
+    return;
+  }
+
+  realtimeOverviewChartRefreshTimer = setTimeout(async () => {
+    realtimeOverviewChartRefreshTimer = null;
+    try {
+      await loadGlobalStats();
+    } catch (error) {
+      console.error('[Overview] Realtime chart refresh failed:', error);
+    }
+  }, 120000);
+}
+
+function updateOverviewRealtimeNumberSummaries() {
+  const projectsWithStats = allProjects.filter(project => project.stats);
+  if (projectsWithStats.length === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+  const totals = {
+    input: 0,
+    output: 0,
+    cost: 0,
+    input30: 0,
+    output30: 0,
+    cost30: 0
+  };
+
+  projectsWithStats.forEach(project => {
+    const stats = project.stats || {};
+    const input = stats.total_input_tokens || 0;
+    const output = stats.total_output_tokens || 0;
+    const cost = stats.total_cost || 0;
+    totals.input += input;
+    totals.output += output;
+    totals.cost += cost;
+
+    const lastDate = stats.last_message_date || project.last_modified;
+    const lastTime = typeof lastDate === 'number' ? lastDate * 1000 : Date.parse(lastDate);
+    if (!Number.isNaN(lastTime) && lastTime >= thirtyDaysAgo) {
+      totals.input30 += input;
+      totals.output30 += output;
+      totals.cost30 += cost;
+    }
+  });
+
+  const tokenAllTime = document.getElementById('token-all-time');
+  const token30Days = document.getElementById('token-30-days');
+  const costAllTime = document.getElementById('total-cost-all-time');
+  const cost30Days = document.getElementById('total-cost-30-days');
+
+  if (tokenAllTime) {
+    tokenAllTime.innerHTML = `All-time: <span class="token-input">${formatRealtimeSummaryNumber(totals.input)}</span> input • <span class="token-output">${formatRealtimeSummaryNumber(totals.output)}</span> output`;
+  }
+  if (token30Days) {
+    token30Days.innerHTML = `30-day: <span class="token-input">${formatRealtimeSummaryNumber(totals.input30)}</span> input • <span class="token-output">${formatRealtimeSummaryNumber(totals.output30)}</span> output`;
+  }
+  if (costAllTime) {
+    costAllTime.textContent = `All-time: $${totals.cost.toFixed(2)}`;
+  }
+  if (cost30Days) {
+    cost30Days.textContent = `30-day: $${totals.cost30.toFixed(2)}`;
+  }
+}
+
+async function refreshOverviewNumbersQuietly() {
+  if (document.hidden || realtimeOverviewNumbersInFlight) {
+    return;
+  }
+
+  realtimeOverviewNumbersInFlight = true;
+  try {
+    const response = await fetch('/api/overview-numbers');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    updateOverviewSummaryNumberElements(data.numbers || {});
+  } catch (error) {
+    console.error('[Overview] Quiet realtime number refresh failed:', error);
+  } finally {
+    realtimeOverviewNumbersInFlight = false;
+  }
+}
+
+function updateOverviewSummaryNumberElements(numbers) {
+  const tokenAllTime = document.getElementById('token-all-time');
+  const token30Days = document.getElementById('token-30-days');
+  const costAllTime = document.getElementById('total-cost-all-time');
+  const cost30Days = document.getElementById('total-cost-30-days');
+
+  if (tokenAllTime) {
+    tokenAllTime.innerHTML = `All-time: <span class="token-input">${formatRealtimeSummaryNumber(numbers.input || 0)}</span> input • <span class="token-output">${formatRealtimeSummaryNumber(numbers.output || 0)}</span> output`;
+  }
+  if (token30Days) {
+    token30Days.innerHTML = `30-day: <span class="token-input">${formatRealtimeSummaryNumber(numbers.input30 || 0)}</span> input • <span class="token-output">${formatRealtimeSummaryNumber(numbers.output30 || 0)}</span> output`;
+  }
+  if (costAllTime) {
+    costAllTime.textContent = `All-time: $${(numbers.cost || 0).toFixed(2)}`;
+  }
+  if (cost30Days) {
+    cost30Days.textContent = `30-day: $${(numbers.cost30 || 0).toFixed(2)}`;
+  }
+  updateOverviewRealtimeTimestamp();
+}
+
+function updateOverviewRealtimeTimestamp() {
+  let status = document.getElementById('overview-realtime-updated-at');
+  const parent = document.getElementById('cost-summary') || document.getElementById('token-summary');
+  if (!status && parent) {
+    status = document.createElement('span');
+    status.id = 'overview-realtime-updated-at';
+    status.style.cssText = 'display:block;margin-top:0.25rem;font-size:0.78rem;opacity:0.72;';
+    parent.appendChild(status);
+  }
+
+  if (status) {
+    status.textContent = `Last realtime update: ${new Date().toLocaleTimeString()}`;
+  }
+}
+
+function startRealtimeOverviewNumbersLoop() {
+  if (window.__codexOverviewNumbersInterval) {
+    clearInterval(window.__codexOverviewNumbersInterval);
+  }
+
+  realtimeOverviewNumbersInterval = setInterval(() => {
+    const intervalMs = window.__codexRealtimeConnected ? 15000 : 5000;
+    const lastRun = window.__codexOverviewNumbersLastRun || 0;
+    if (Date.now() - lastRun < intervalMs) {
+      return;
+    }
+    window.__codexOverviewNumbersLastRun = Date.now();
+    refreshOverviewNumbersQuietly();
+  }, 1000);
+  window.__codexOverviewNumbersInterval = realtimeOverviewNumbersInterval;
+
+  window.addEventListener('beforeunload', () => {
+    if (window.__codexOverviewNumbersInterval) {
+      clearInterval(window.__codexOverviewNumbersInterval);
+      window.__codexOverviewNumbersInterval = null;
+    }
+  }, { once: true });
+}
+
+function startRealtimeOverviewTableUpdates() {
+  if (window.__codexOverviewRealtimeTableListenerAttached) {
+    return;
+  }
+
+  window.addEventListener('codex-logbook:realtime-update', event => {
+    if (window.handleRealtimeOverviewUpdate) {
+      window.handleRealtimeOverviewUpdate(event.detail || {});
+    }
+  });
+
+  window.__codexOverviewRealtimeTableListenerAttached = true;
+}
+
+window.handleRealtimeOverviewUpdate = function(message) {
+  const projectCount = Array.isArray(message.projects) ? message.projects.length : 0;
+  console.log(`[Overview] Realtime update received for ${projectCount} project(s)`);
+
+  const button = document.getElementById('refresh-button');
+  const originalText = button ? button.innerHTML : '';
+  if (button) {
+    button.innerHTML = 'Live update...';
+    button.disabled = true;
+  }
+
+  let needsFullReload = false;
+  const projects = Array.isArray(message.projects) ? message.projects : [];
+
+  projects.forEach(update => {
+    const project = allProjects.find(candidate => 
+      candidate.log_path === update.log_path || candidate.dir_name === update.dir_name
+    );
+
+    if (!project || !update.stats) {
+      needsFullReload = true;
+      return;
+    }
+
+    project.stats = update.stats;
+    project.in_cache = true;
+    project.last_modified = Date.now() / 1000;
+
+    const filteredProject = filteredProjects.find(candidate => 
+      candidate.log_path === update.log_path || candidate.dir_name === update.dir_name
+    );
+    if (filteredProject) {
+      filteredProject.stats = update.stats;
+      filteredProject.in_cache = true;
+      filteredProject.last_modified = project.last_modified;
+      projectUpdateMap.set(filteredProject.log_path, true);
+      updateVisibleProjectRow(filteredProject);
+    }
+  });
+
+  calculateQuickStats(allProjects);
+  updateOverviewRealtimeNumberSummaries();
+  updateOverviewRealtimeTimestamp();
+  scheduleRealtimeOverviewCharts();
+
+  if (needsFullReload) {
+    clearTimeout(realtimeOverviewFullReloadTimer);
+    realtimeOverviewFullReloadTimer = setTimeout(async () => {
+      try {
+        await loadProjects();
+      } catch (error) {
+        console.error('[Overview] Realtime project reload failed:', error);
+      }
+    }, 5000);
+  }
+
+  if (button) {
+    button.innerHTML = 'Updated live';
+    setTimeout(() => {
+      if (button.innerHTML === 'Updated live') {
+        button.innerHTML = originalText || 'Refresh';
+        button.disabled = false;
+      }
+    }, 1500);
+  }
+};
 
 // Refresh data function - only processes changed files
 async function refreshData() {

@@ -132,9 +132,9 @@ class LocalCacheService:
             logger.debug(f"Error checking changes: {e}")
             return True  # Assume changes on any error
 
-    def get_cached_stats(self, log_path: str) -> dict[str, Any] | None:
+    def get_cached_stats(self, log_path: str, allow_stale: bool = False) -> dict[str, Any] | None:
         """Get cached statistics if available and valid"""
-        if self.has_changes(log_path):
+        if not allow_stale and self.has_changes(log_path):
             return None
 
         stats_path = self._get_cache_path(log_path, "stats.json")
