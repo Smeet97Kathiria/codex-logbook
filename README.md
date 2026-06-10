@@ -92,6 +92,7 @@ Codex Logbook is meant for those check-ins: open it, spot what changed, and make
 ## Features
 
 - **Project overview**: See which Codex projects are active, expensive, token-heavy, or missing data.
+- **Realtime dashboard numbers**: Keep overview and project summary values moving with websocket updates from newly appended Codex activity.
 - **Token and cost charts**: Track input/output tokens and estimated direct API cost over time.
 - **Tool usage breakdowns**: Find sessions that rely heavily on terminal, file, browser, or other tools.
 - **Command review**: Look back at commands, step counts, tool counts, models, token estimates, and interruptions.
@@ -186,6 +187,8 @@ Use a custom export directory:
 CODEX_LOGBOOK_EXPORT_DIR=/path/to/codex-logbook-projects codex-logbook init
 ```
 
+While the dashboard is open, Codex Logbook watches local exported JSONL files and sends lightweight websocket updates to the browser. Number summaries use in-memory live deltas from newly appended log lines, while historical stats and charts stay cache-backed so realtime updates do not constantly reprocess full projects.
+
 ## Configuration
 
 ```bash
@@ -210,6 +213,8 @@ Common options:
 | `cache_max_mb_per_project` | `500` | Max memory per project cache |
 | `messages_initial_load` | `500` | Initial message rows loaded |
 | `max_date_range_days` | `30` | Max selectable chart date range |
+| `enable_realtime_updates` | `true` | Enable websocket updates for live dashboard numbers |
+| `realtime_poll_seconds` | `2` | Poll interval for detecting appended Codex activity |
 
 See [docs/cli-reference.md](docs/cli-reference.md) for the full CLI reference.
 
